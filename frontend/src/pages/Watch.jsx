@@ -87,13 +87,13 @@ export default function Watch() {
             setStreamType(null);
 
             try {
-                const encoded = encodeURIComponent(activeLink.url);
-                const res = await fetch(`/api/v1/extract-stream?url=${encoded}`);
-                const json = await res.json();
+                // Gunakan wrapper api() bawaan project yang sudah membaca VITE_API_URL
+                const json = await api.extractStream(activeLink.url);
                 if (cancelled) return;
 
                 if (json.success && json.videoUrl) {
-                    const proxyUrl = `/api/v1/stream-proxy?url=${encodeURIComponent(json.videoUrl)}`;
+                    // Gunakan api.getBaseUrl() agar URL stream-proxy memakai domain backend yang benar
+                    const proxyUrl = `${api.getBaseUrl()}/stream-proxy?url=${encodeURIComponent(json.videoUrl)}`;
                     setStreamUrl(proxyUrl);
                     setStreamType(json.type || 'mp4');
                     console.log(`[Watch] Stream (${json.type}) ready`);

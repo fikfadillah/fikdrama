@@ -34,4 +34,8 @@ export const api = {
     schedule: () => apiFetch('/schedule'),
     ongoing: (page = 1) => apiFetch(`/ongoing?page=${page}`),
     completed: (page = 1) => apiFetch(`/completed?page=${page}`),
+
+    // Video stream endpoints
+    extractStream: (url) => apiFetch(`/extract-stream?url=${encodeURIComponent(url)}`),
+    getBaseUrl: () => BASE, // Untuk construct direct URL ke stream-proxy
 };
