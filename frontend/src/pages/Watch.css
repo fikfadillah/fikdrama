@@ -161,12 +161,12 @@
     display: flex;
     justify-content: space-between;
     gap: 12px;
-    margin-bottom: 28px;
 }
 
 .nav-ep-btn {
     display: inline-flex;
     align-items: center;
+    justify-content: center;
     gap: 6px;
     padding: 10px 20px;
     background: var(--bg-card);
@@ -177,6 +177,8 @@
     font-weight: 500;
     color: var(--text-secondary);
     transition: all var(--transition);
+    min-height: 44px;
+    /* Mobile tap target */
 }
 
 .nav-ep-btn:hover {
@@ -185,8 +187,73 @@
     color: var(--accent-soft);
 }
 
-.nav-ep-btn--next {
-    margin-left: auto;
+/* Episode Horizontal List */
+.episode-scroll-list {
+    display: flex;
+    gap: 10px;
+    overflow-x: auto;
+    padding-bottom: 8px;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+    /* Firefox */
+}
+
+.episode-scroll-list::-webkit-scrollbar {
+    display: none;
+    /* Chrome/Safari */
+}
+
+.ep-scroll-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 64px;
+    padding: 8px 16px;
+    background: var(--bg-elevated);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    font-family: var(--font-heading);
+    font-size: 0.9rem;
+    font-weight: 500;
+    color: var(--text-secondary);
+    transition: all var(--transition);
+    white-space: nowrap;
+    min-height: 44px;
+    /* Mobile touch target */
+}
+
+.ep-scroll-btn:hover {
+    background: var(--bg-hover);
+    color: var(--text-primary);
+    border-color: var(--text-secondary);
+}
+
+.ep-scroll-btn--active {
+    background: var(--accent);
+    color: var(--text-on-accent);
+    border-color: var(--accent);
+    box-shadow: var(--accent-glow);
+    font-weight: 600;
+    pointer-events: none;
+}
+
+/* Drama Info Synopsis */
+.synopsis-text {
+    display: -webkit-box;
+    -webkit-line-clamp: 3;
+    line-clamp: 3;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+    transition: all 0.3s ease;
+}
+
+.synopsis-text.expanded {
+    -webkit-line-clamp: unset;
+    line-clamp: unset;
+}
+
+.btn-read-more:hover {
+    text-decoration: underline;
 }
 
 /* Download */
@@ -221,6 +288,17 @@
     padding: 1px 6px;
     background: rgba(124, 58, 237, 0.25);
     border-radius: 3px;
+}
+
+/* Similar Dramas */
+.similar-drama-scroll::-webkit-scrollbar {
+    display: none;
+    /* Safari and Chrome */
+}
+
+.similar-drama-scroll {
+    scrollbar-width: none;
+    /* Firefox */
 }
 
 /* Native player container — Plyr DOM hidup di sini, bukan React */
@@ -331,4 +409,51 @@
     transform: translateY(-2px);
     box-shadow: 0 0 32px rgba(124, 58, 237, 0.55);
     color: #fff;
+}
+
+/* Mobile Responsive */
+@media (max-width: 768px) {
+    .watch-header-row {
+        gap: 8px !important;
+        padding-bottom: 12px !important;
+    }
+
+    .back-btn {
+        padding-right: 12px !important;
+        margin-bottom: 0px !important;
+    }
+
+    .watch-title {
+        font-size: 1.1rem !important;
+    }
+
+    .player-wrapper {
+        border-radius: 0;
+        margin-left: -16px;
+        margin-right: -16px;
+        width: 100vw;
+    }
+
+    .episode-nav {
+        width: 100%;
+        margin-top: 16px;
+    }
+
+    .nav-ep-btn {
+        flex: 1;
+        padding: 12px 10px;
+    }
+
+    .drama-info-section {
+        padding: 16px !important;
+        margin-top: 16px !important;
+    }
+
+    .drama-info-section h2 {
+        font-size: 1.2rem !important;
+    }
+
+    .similar-drama-scroll {
+        gap: 12px !important;
+    }
 }

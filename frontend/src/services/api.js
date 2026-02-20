@@ -18,6 +18,7 @@ export const api = {
         if (opts.page) p.set('page', opts.page);
         if (opts.status) p.set('status', opts.status);
         if (opts.type) p.set('type', opts.type);
+        if (opts.genre) p.set('genre', opts.genre);
         if (opts.order) p.set('order', opts.order);
         return apiFetch(`/series?${p}`);
     },

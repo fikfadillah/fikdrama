@@ -153,13 +153,15 @@ async function scrapeHomepage() {
  * @param {Object} opts - { page, status, type, country, order }
  */
 async function scrapeSeriesList(opts = {}) {
-    const { page = 1, status, type, country, order = 'update' } = opts;
+    const { page = 1, status, type, country, genre, order = 'update' } = opts;
 
     let path = `/series/?page=${page}&order=${order}`;
     if (status) path += `&status[]=${encodeURIComponent(status)}`;
     if (type) path += `&type[]=${encodeURIComponent(type)}`;
     if (country) path += `&country[]=${encodeURIComponent(country)}`;
+    if (genre) path += `&genre[0]=${encodeURIComponent(genre)}`;
 
+    console.log(`[Scraper] Fetching list: ${path}`);
     const html = await request(path);
     const $ = cheerio.load(html);
 

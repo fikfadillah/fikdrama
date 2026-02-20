@@ -1,59 +1,24 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect } from 'react';
 import { useParams, Link } from 'react-router-dom';
-import Hls from 'hls.js';
-import Plyr from 'plyr';
-import 'plyr/dist/plyr.css';
 import { api } from '../services/api';
+import VideoPlayer from '../components/VideoPlayer';
+import SeriesCard from '../components/SeriesCard';
 import './Watch.css';
 
 export default function Watch() {
     const { slug } = useParams();
     const [data, setData] = useState(null);
+    const [seriesData, setSeriesData] = useState(null);
+    const [similarDramas, setSimilarDramas] = useState([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
     const [activeLink, setActiveLink] = useState(null);
+    const [isSynopsisExpanded, setIsSynopsisExpanded] = useState(false);
 
     // Stream state
     const [streamUrl, setStreamUrl] = useState(null);
     const [streamType, setStreamType] = useState(null); // 'hls' | 'mp4' | 'iframe' | 'external'
     const [isResolving, setIsResolving] = useState(false);
-
-    // Player container ref — diserahkan ke Plyr, React tidak menyentuh isinya
-    const containerRef = useRef(null);
-    const wrapperRef = useRef(null); // outer .player-wrapper, used as fullscreen target
-
-    // Keep refs to avoid stale closures
-    const hlsRef = useRef(null);
-    const plyrRef = useRef(null);
-
-    // ── Cleanup helper ────────────────────────────────────────────
-    // Menghancurkan Plyr & HLS, lalu merestorasi <video> bersih
-    const destroyPlayer = useCallback(() => {
-        if (hlsRef.current) {
-            try { hlsRef.current.destroy(); } catch (_) { }
-            hlsRef.current = null;
-        }
-        if (plyrRef.current) {
-            try { plyrRef.current.destroy(); } catch (_) { }
-            plyrRef.current = null;
-        }
-        // Restorasi container ke <video> bersih agar React menemukan DOM yang diharapkan
-        if (containerRef.current) {
-            // Hapus semua child yang mungkin ditambahkan Plyr
-            while (containerRef.current.firstChild) {
-                containerRef.current.removeChild(containerRef.current.firstChild);
-            }
-            // Tambahkan kembali <video> bersih
-            const vid = document.createElement('video');
-            vid.className = 'player-video--raw';
-            vid.crossOrigin = 'anonymous';
-            vid.setAttribute('playsinline', '');
-            containerRef.current.appendChild(vid);
-        }
-    }, []);
-
-    // Cleanup saat unmount
-    useEffect(() => () => destroyPlayer(), [destroyPlayer]);
 
     // ── Load episode ──────────────────────────────────────────────
     useEffect(() => {
@@ -64,7 +29,42 @@ export default function Watch() {
             .then((d) => {
                 if (!cancelled) {
                     setData(d);
-                    if (d.streamLinks?.length) setActiveLink(d.streamLinks[0]);
+                    if (d.seriesSlug) {
+                        api.seriesDetail(d.seriesSlug)
+                            .then(sData => {
+                                if (!cancelled) {
+                                    setSeriesData(sData);
+
+                                    // Fetch similar dramas using the first genre, or fallback to home
+                                    if (sData.genres && sData.genres.length > 0) {
+                                        api.genre(sData.genres[0].toLowerCase().replace(/\s+/g, '-'))
+                                            .then(genData => {
+                                                if (!cancelled) setSimilarDramas(genData?.items?.filter(item => item.slug !== d.seriesSlug) || []);
+                                            })
+                                            .catch(() => {
+                                                // Fallback to home if genre fails
+                                                api.home().then(homeData => {
+                                                    if (!cancelled) setSimilarDramas(homeData?.items?.filter(item => item.slug !== d.seriesSlug) || []);
+                                                }).catch(() => { });
+                                            });
+                                    } else {
+                                        api.home().then(homeData => {
+                                            if (!cancelled) setSimilarDramas(homeData?.items?.filter(item => item.slug !== d.seriesSlug) || []);
+                                        }).catch(() => { });
+                                    }
+                                }
+                            })
+                            .catch(e => console.warn('[Watch] Failed to fetch series detail:', e));
+                    }
+                    if (d.streamLinks?.length) {
+                        // Prioritaskan server Hydrax jika ada, jika tidak gunakan server pertama
+                        const hydraxLink = d.streamLinks.find(link =>
+                            link.server.toLowerCase().includes('hydrax') ||
+                            link.url.toLowerCase().includes('hydrax') ||
+                            link.url.toLowerCase().includes('short.icu')
+                        );
+                        setActiveLink(hydraxLink || d.streamLinks[0]);
+                    }
                     setLoading(false);
                 }
             })
@@ -78,38 +78,37 @@ export default function Watch() {
         let cancelled = false;
 
         const resolveStream = async () => {
-            // 1. Destroy player secara sinkron
-            destroyPlayer();
-
-            // 2. Reset stream state (komponen re-render ke placeholder)
             setIsResolving(true);
             setStreamUrl(null);
             setStreamType(null);
 
+            // Fast-path: Skip backend extraction for Hydrax/short.icu
+            let hostname = '';
+            try { hostname = new URL(activeLink.url).hostname; } catch (_) { }
+            const isAntiEmbed = hostname.includes('hydrax') || hostname.includes('short.icu');
+
+            if (isAntiEmbed) {
+                console.log('[Watch] Fast-path Hydrax → hydrax-iframe');
+                if (!cancelled) {
+                    setStreamUrl(activeLink.url); // Use the original embed url
+                    setStreamType('hydrax-iframe');
+                    setIsResolving(false);
+                }
+                return;
+            }
+
             try {
-                // Gunakan wrapper api() bawaan project yang sudah membaca VITE_API_URL
                 const json = await api.extractStream(activeLink.url);
                 if (cancelled) return;
 
                 if (json.success && json.videoUrl) {
-                    // Gunakan api.getBaseUrl() agar URL stream-proxy memakai domain backend yang benar
                     const proxyUrl = `${api.getBaseUrl()}/stream-proxy?url=${encodeURIComponent(json.videoUrl)}`;
                     setStreamUrl(proxyUrl);
                     setStreamType(json.type || 'mp4');
                     console.log(`[Watch] Stream (${json.type}) ready`);
                 } else {
-                    let hostname = '';
-                    try { hostname = new URL(activeLink.url).hostname; } catch (_) { }
-                    const isAntiEmbed = hostname.includes('hydrax') || hostname.includes('short.icu');
-
-                    if (isAntiEmbed) {
-                        console.warn('[Watch] Anti-embed → external');
-                        setStreamUrl(activeLink.url);
-                        setStreamType('external');
-                    } else {
-                        console.warn('[Watch] No stream → iframe');
-                        setStreamType('iframe');
-                    }
+                    console.warn('[Watch] No stream → iframe');
+                    setStreamType('iframe');
                 }
             } catch (e) {
                 if (!cancelled) {
@@ -123,107 +122,7 @@ export default function Watch() {
 
         resolveStream();
         return () => { cancelled = true; };
-    }, [activeLink, destroyPlayer]);
-
-    // ── Init Plyr + HLS setelah DOM siap ─────────────────────────
-    useEffect(() => {
-        if (!containerRef.current) return;
-        if (!streamUrl || (streamType !== 'hls' && streamType !== 'mp4')) return;
-
-        // Ambil elemen <video> yang sudah ada di container
-        let video = containerRef.current.querySelector('video');
-        if (!video) {
-            video = document.createElement('video');
-            video.className = 'player-video--raw';
-            video.crossOrigin = 'anonymous';
-            video.setAttribute('playsinline', '');
-            containerRef.current.appendChild(video);
-        }
-
-        const baseOpts = {
-            controls: [
-                'play-large', 'restart', 'rewind', 'play', 'fast-forward',
-                'progress', 'current-time', 'duration', 'mute',
-                'volume', 'captions', 'settings', 'pip', 'airplay', 'fullscreen',
-            ],
-            settings: ['quality', 'speed'],
-            i18n: { qualityLabel: { 0: 'Auto' } },
-            autoplay: false,
-            fullscreen: {
-                enabled: true,
-                fallback: true,
-                iosNative: true,
-            },
-        };
-
-        if (streamType === 'hls' && Hls.isSupported()) {
-            const hls = new Hls({ xhrSetup: (xhr) => { xhr.withCredentials = false; } });
-            hls.loadSource(streamUrl);
-            hls.attachMedia(video);
-            hlsRef.current = hls;
-
-            hls.on(Hls.Events.MANIFEST_PARSED, () => {
-                const availQuals = hls.levels.map((l) => l.height);
-
-                // Destroy any Plyr created before manifest (shouldn't happen, but safety)
-                if (plyrRef.current) {
-                    try { plyrRef.current.destroy(); } catch (_) { }
-                    plyrRef.current = null;
-                }
-
-                const player = new Plyr(video, {
-                    ...baseOpts,
-                    quality: {
-                        default: 0,
-                        options: [0, ...availQuals],
-                        forced: true,
-                        onChange: (newQuality) => {
-                            hls.currentLevel = newQuality === 0
-                                ? -1
-                                : hls.levels.findIndex((l) => l.height === newQuality);
-                        },
-                    },
-                });
-                plyrRef.current = player;
-
-                // Override Plyr fullscreen: request on the outer wrapper so CSS :fullscreen rules apply
-                const patchFullscreen = (p) => {
-                    p.on('ready', () => {
-                        const fsBtn = p.elements?.container?.querySelector('[data-plyr="fullscreen"]');
-                        if (fsBtn && wrapperRef.current) {
-                            fsBtn.addEventListener('click', (e) => {
-                                e.stopPropagation();
-                                const wrapper = wrapperRef.current;
-                                if (!document.fullscreenElement) {
-                                    wrapper.requestFullscreen?.() || wrapper.webkitRequestFullscreen?.();
-                                } else {
-                                    document.exitFullscreen?.() || document.webkitExitFullscreen?.();
-                                }
-                            }, { capture: true });
-                        }
-                    });
-                };
-                patchFullscreen(player);
-                player.play().catch(() => { });
-            });
-
-            hls.on(Hls.Events.ERROR, (_e, d) => {
-                if (d.fatal) console.error('[HLS] Fatal:', d.type, d.details);
-            });
-
-        } else if (streamType === 'hls' && video.canPlayType('application/vnd.apple.mpegurl')) {
-            video.src = streamUrl;
-            const player = new Plyr(video, baseOpts);
-            plyrRef.current = player;
-            video.addEventListener('loadedmetadata', () => player.play().catch(() => { }), { once: true });
-
-        } else if (streamType === 'mp4') {
-            video.src = streamUrl;
-            const player = new Plyr(video, baseOpts);
-            plyrRef.current = player;
-            player.on('ready', () => player.play().catch(() => { }));
-        }
-    }, [streamType, streamUrl]);
+    }, [activeLink]);
 
     // ── Render ────────────────────────────────────────────────────
     if (loading) return (
@@ -244,126 +143,141 @@ export default function Watch() {
     );
 
     const { title, streamLinks = [], downloadLinks = [], navigation = {}, seriesSlug } = data || {};
-    const useNativePlayer = streamType === 'hls' || streamType === 'mp4';
+
+    // Generate Drama Info mapping
+    const seriesTitle = seriesData?.title || title.replace(/Episode \d+/i, '').trim();
+    const episodeNumber = title.match(/Episode (\d+)/i)?.[1] || '?';
+    // Remove "Download dan nonton [title] Episode [X] subtitle Indonesia dengan kualitas HD 1080p 720p 480p 360p disertai Batch Google Drive menjadikan situs OPPADRAMA tempat nongkrongnya pecinta drama series." and variations.
+    const cleanSynopsis = seriesData?.synopsis ? seriesData.synopsis.replace(/Download dan nonton.*?pecinta drama series\./gi, '').trim() : '';
+    const hasSynopsis = cleanSynopsis.length > 0;
 
     return (
         <div className="watch-page">
             <div className="container">
                 {/* Header */}
-                <div className="watch-header">
+                <div className="watch-header-row" style={{ display: 'flex', alignItems: 'center', gap: '16px', flexWrap: 'wrap', padding: '24px 0 16px' }}>
                     {seriesSlug && (
-                        <Link to={`/series/${seriesSlug}`} className="back-btn">
+                        <Link to={`/series/${seriesSlug}`} className="back-btn" style={{ margin: 0, paddingRight: '16px', borderRight: '1px solid var(--border)' }}>
                             ← Kembali ke Series
                         </Link>
                     )}
-                    <h1 className="watch-title">{title}</h1>
+                    <h1 className="watch-title" style={{ margin: 0, fontSize: '1.2rem' }}>{title}</h1>
                 </div>
 
-                {/* Player */}
-                <div className="player-wrapper" ref={wrapperRef}>
-                    {isResolving && (
-                        <div className="player-loading">
-                            <div className="spinner" />
-                            <p>Menyiapkan video...</p>
-                        </div>
-                    )}
+                {/* Player — fully isolated in VideoPlayer component */}
+                <VideoPlayer
+                    streamUrl={streamUrl}
+                    streamType={streamType}
+                    isResolving={isResolving}
+                    title={title}
+                    serverName={activeLink?.server || ''}
+                    embedUrl={activeLink?.url || ''}
+                    proxyBase={api.getBaseUrl()}
+                />
 
-                    {/* External: Hydrax / server anti-embed */}
-                    {!isResolving && streamType === 'external' && (
-                        <div className="player-external">
-                            <div className="player-external__icon">🎬</div>
-                            <h3 className="player-external__title">Video tidak dapat ditampilkan di sini</h3>
-                            <p className="player-external__desc">
-                                Server <strong>{activeLink?.server || 'ini'}</strong> tidak mengizinkan pemutar tertanam.
-                                Klik tombol di bawah untuk menonton langsung.
-                            </p>
-                            <a
-                                href={streamUrl}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="player-external__btn"
-                            >
-                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                                    <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
-                                    <polyline points="15 3 21 3 21 9" />
-                                    <line x1="10" y1="14" x2="21" y2="3" />
-                                </svg>
-                                Tonton di Tab Baru
-                            </a>
-                        </div>
-                    )}
+                {/* Server switcher & Navigation Row */}
+                {(streamLinks.length > 0 || navigation.prev || navigation.next) && (
+                    <div className="server-section" style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '16px' }}>
+                            <div>
+                                <h3 className="server-label">Pilih Server</h3>
+                                <div className="server-list">
+                                    {streamLinks.map((link, i) => (
+                                        <button
+                                            key={i}
+                                            className={`server-btn ${activeLink?.url === link.url ? 'server-btn--active' : ''}`}
+                                            onClick={() => setActiveLink(link)}
+                                        >
+                                            <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><path d="M5 3l14 9-14 9V3z" /></svg>
+                                            {link.server || `Server ${i + 1}`}
+                                            {link.quality !== 'Unknown' && <span className="server-btn__quality">{link.quality}</span>}
+                                        </button>
+                                    ))}
+                                </div>
+                            </div>
 
-                    {/* Iframe fallback */}
-                    {!isResolving && streamType === 'iframe' && (
-                        <iframe
-                            key={activeLink?.url}
-                            src={`/api/v1/player-proxy?url=${encodeURIComponent(activeLink?.url || '')}`}
-                            className="player-iframe"
-                            allowFullScreen
-                            webkitallowfullscreen="true"
-                            mozallowfullscreen="true"
-                            title={title}
-                            allow="autoplay; fullscreen; encrypted-media; picture-in-picture"
-                            referrerPolicy="no-referrer"
-                        />
-                    )}
-
-                    {/* Placeholder */}
-                    {!isResolving && !streamType && (
-                        <div className="player-unavailable">
-                            <div className="icon">🎬</div>
-                            <h3>Video tidak tersedia</h3>
-                            <p>Coba pilih server lain di bawah</p>
-                        </div>
-                    )}
-
-                    {/*
-                        Container untuk Plyr — React tidak pernah memodifikasi isi div ini.
-                        Plyr dan HLS.js bebas memanipulasi DOM di dalamnya.
-                        Ditampilkan hanya saat native player aktif.
-                    */}
-                    <div
-                        ref={containerRef}
-                        className={`player-native-container${useNativePlayer ? ' player-native-container--active' : ''}`}
-                        data-poster={data?.poster || ''}
-                    >
-                        {/* <video> pertama kali diinjeksi lewat JS di useEffect, bukan JSX */}
-                    </div>
-                </div>
-
-                {/* Server switcher */}
-                {streamLinks.length > 0 && (
-                    <div className="server-section">
-                        <h3 className="server-label">Pilih Server</h3>
-                        <div className="server-list">
-                            {streamLinks.map((link, i) => (
-                                <button
-                                    key={i}
-                                    className={`server-btn ${activeLink?.url === link.url ? 'server-btn--active' : ''}`}
-                                    onClick={() => setActiveLink(link)}
-                                >
-                                    <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><path d="M5 3l14 9-14 9V3z" /></svg>
-                                    {link.server || `Server ${i + 1}`}
-                                    {link.quality !== 'Unknown' && <span className="server-btn__quality">{link.quality}</span>}
-                                </button>
-                            ))}
+                            {/* Navigation */}
+                            <div className="episode-nav" style={{ margin: 0, gap: '8px' }}>
+                                {navigation.prev ? (
+                                    <Link to={`/watch/${navigation.prev}`} className="nav-ep-btn">
+                                        ← Prev
+                                    </Link>
+                                ) : <div />}
+                                {navigation.next && (
+                                    <Link to={`/watch/${navigation.next}`} className="nav-ep-btn nav-ep-btn--next">
+                                        Next →
+                                    </Link>
+                                )}
+                            </div>
                         </div>
                     </div>
                 )}
 
-                {/* Navigation */}
-                <div className="episode-nav">
-                    {navigation.prev ? (
-                        <Link to={`/watch/${navigation.prev}`} className="nav-ep-btn">
-                            ← Episode Sebelumnya
-                        </Link>
-                    ) : <div />}
-                    {navigation.next && (
-                        <Link to={`/watch/${navigation.next}`} className="nav-ep-btn nav-ep-btn--next">
-                            Episode Selanjutnya →
-                        </Link>
-                    )}
-                </div>
+                {/* Episode List (Horizontal Scroll) */}
+                {seriesData?.episodes?.length > 0 && (
+                    <div className="episode-list-section" style={{ marginTop: '24px', marginBottom: '24px' }}>
+                        <h3 className="section-title" style={{ fontSize: '1rem', marginBottom: '12px' }}>Daftar Episode</h3>
+                        <div className="episode-scroll-list">
+                            {seriesData.episodes.map((ep) => {
+                                const isActive = ep.slug === slug;
+                                return (
+                                    <Link
+                                        key={ep.slug}
+                                        to={`/watch/${ep.slug}`}
+                                        className={`ep-scroll-btn ${isActive ? 'ep-scroll-btn--active' : ''}`}
+                                    >
+                                        Ep {ep.number || ep.title.replace(/[^\d]/g, '') || '?'}
+                                    </Link>
+                                );
+                            })}
+                        </div>
+                    </div>
+                )}
+
+                {/* Drama Info Section */}
+                {seriesData && (
+                    <div className="drama-info-section" style={{ marginTop: '24px', padding: '20px', background: 'var(--bg-card)', borderRadius: 'var(--radius-lg)', border: '1px solid var(--border)' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '16px', marginBottom: '16px' }}>
+                            <div>
+                                <h2 style={{ fontSize: '1.4rem', fontWeight: 700, margin: '0 0 8px 0', color: 'var(--text-primary)' }}>
+                                    {seriesTitle} <span style={{ color: 'var(--accent-soft)', fontSize: '1.1rem' }}>— Ep {episodeNumber}</span>
+                                </h2>
+                                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
+                                    {seriesData.genres?.map(g => (
+                                        <Link key={g} to={`/genre/${g.toLowerCase().replace(/\s+/g, '-')}`} className="genre-pill" style={{ padding: '4px 10px', fontSize: '0.75rem', background: 'var(--bg-elevated)', borderRadius: 'var(--radius-full)', color: 'var(--text-secondary)' }}>
+                                            {g}
+                                        </Link>
+                                    ))}
+                                </div>
+                            </div>
+                            {seriesData.rating && (
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', background: 'rgba(245, 158, 11, 0.1)', padding: '6px 12px', borderRadius: 'var(--radius-full)', color: '#f59e0b', fontWeight: 600 }}>
+                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" /></svg>
+                                    {seriesData.rating}
+                                </div>
+                            )}
+                        </div>
+
+                        <div className="drama-synopsis">
+                            {hasSynopsis ? (
+                                <>
+                                    <p className={`synopsis-text ${isSynopsisExpanded ? 'expanded' : ''}`} style={{ color: 'var(--text-muted)', fontSize: '0.95rem', lineHeight: 1.6, margin: 0 }}>
+                                        {cleanSynopsis}
+                                    </p>
+                                    {cleanSynopsis.length > 150 && (
+                                        <button onClick={() => setIsSynopsisExpanded(!isSynopsisExpanded)} className="btn-read-more" style={{ background: 'transparent', border: 'none', color: 'var(--accent)', fontWeight: 600, padding: '8px 0 0 0', cursor: 'pointer', fontSize: '0.9rem' }}>
+                                            {isSynopsisExpanded ? 'Sembunyikan' : 'Selengkapnya'}
+                                        </button>
+                                    )}
+                                </>
+                            ) : (
+                                <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem', fontStyle: 'italic', margin: 0 }}>
+                                    Informasi sinopsis belum tersedia untuk seri ini.
+                                </p>
+                            )}
+                        </div>
+                    </div>
+                )}
 
                 {/* Download */}
                 {downloadLinks.length > 0 && (
@@ -380,6 +294,24 @@ export default function Watch() {
                                     {dl.server}
                                     {dl.quality !== 'Unknown' && <span className="dl-quality">{dl.quality}</span>}
                                 </a>
+                            ))}
+                        </div>
+                    </div>
+                )}
+
+                {/* Drama Serupa (Similar Dramas) */}
+                {similarDramas.length > 0 && (
+                    <div className="similar-drama-section" style={{ marginTop: '40px' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+                            <h3 className="section-title" style={{ fontSize: '1.1rem', margin: 0 }}>
+                                <span className="title-icon">🔥</span> Drama Serupa
+                            </h3>
+                        </div>
+                        <div className="similar-drama-scroll" style={{ display: 'flex', gap: '16px', overflowX: 'auto', paddingBottom: '16px', scrollSnapType: 'x mandatory', WebkitOverflowScrolling: 'touch' }}>
+                            {similarDramas.map((item, i) => (
+                                <div key={item.slug || i} style={{ minWidth: '160px', width: '160px', scrollSnapAlign: 'start', flexShrink: 0 }}>
+                                    <SeriesCard item={item} index={i} />
+                                </div>
                             ))}
                         </div>
                     </div>

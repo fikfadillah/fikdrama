@@ -49,7 +49,7 @@ const MODE_CONFIG = {
     },
     animation: {
         title: () => 'Animasi',
-        fetcher: (_, page) => api.series({ type: 'Animation', page }),
+        fetcher: (_, page) => api.series({ genre: 'animation', page }),
     },
     tv_show: {
         title: () => 'Variety Show',

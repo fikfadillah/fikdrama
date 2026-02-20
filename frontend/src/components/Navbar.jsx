@@ -4,20 +4,22 @@ import { api } from '../services/api';
 import './Navbar.css';
 
 const COUNTRIES = [
-    { slug: 'south-korea', label: 'Korea', flag: '🇰🇷' },
-    { slug: 'china', label: 'China', flag: '🇨🇳' },
-    { slug: 'japan', label: 'Jepang', flag: '🇯🇵' },
-    { slug: 'thailand', label: 'Thailand', flag: '🇹🇭' },
-    { slug: 'taiwan', label: 'Taiwan', flag: '🇹🇼' },
-    { slug: 'philippines', label: 'Filipina', flag: '🇵🇭' },
-    { slug: 'hong-kong', label: 'HK', flag: '🇭🇰' },
-    { slug: 'india', label: 'India', flag: '🇮🇳' },
-    { slug: 'united-states', label: 'Barat', flag: '🇺🇸' },
+    { slug: 'south-korea', label: 'Korea', code: 'kr' },
+    { slug: 'china', label: 'China', code: 'cn' },
+    { slug: 'japan', label: 'Jepang', code: 'jp' },
+    { slug: 'thailand', label: 'Thailand', code: 'th' },
+    { slug: 'taiwan', label: 'Taiwan', code: 'tw' },
+    { slug: 'philippines', label: 'Filipina', code: 'ph' },
+    { slug: 'hong-kong', label: 'HK', code: 'hk' },
+    { slug: 'india', label: 'India', code: 'in' },
+    { slug: 'united-states', label: 'Barat', code: 'us' },
 ];
 
 const MENU = [
     { label: 'Drama', isDropdown: true, contentType: 'drama' },
     { label: 'Film', isDropdown: true, contentType: 'movie' },
+    { label: 'Variety', path: '/category/tv_show' },
+    { label: 'Animasi', path: '/category/animation' },
     { label: 'Ongoing', path: '/ongoing' },
     { label: 'Completed', path: '/completed' },
     { label: 'Jadwal', path: '/schedule' },
@@ -106,7 +108,9 @@ export default function Navbar() {
                                                     to={`/country/${c.slug}/${m.contentType}`}
                                                     className={`dropdown-link ${location.pathname === `/country/${c.slug}/${m.contentType}` ? 'active' : ''}`}
                                                 >
-                                                    <span className="dd-flag" aria-hidden="true">{c.flag}</span>
+                                                    <span className="dd-flag" aria-hidden="true">
+                                                        <img src={`https://flagcdn.com/${c.code}.svg`} width="18" alt="" style={{ borderRadius: '2px', display: 'block' }} />
+                                                    </span>
                                                     <span className="dd-label">{c.label}</span>
                                                 </Link>
                                             </li>
@@ -190,7 +194,7 @@ export default function Navbar() {
                                         className="mobile-dropdown-link"
                                         onClick={() => setMobileOpen(false)}
                                     >
-                                        {c.flag} {c.label}
+                                        <img src={`https://flagcdn.com/${c.code}.svg`} width="14" alt="" style={{ borderRadius: '2px' }} /> {c.label}
                                     </Link>
                                 ))}
                             </div>

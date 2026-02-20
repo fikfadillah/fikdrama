@@ -1,0 +1,366 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="referrer" content="no-referrer">
+    <title>FikDrama Player</title>
+
+    <!-- Plyr CSS -->
+    <link rel="stylesheet" href="https://cdn.plyr.io/3.7.8/plyr.css">
+
+    <style>
+        *,
+        *::before,
+        *::after {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        html,
+        body {
+            width: 100%;
+            height: 100%;
+            background: #000;
+            overflow: hidden;
+            font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+        }
+
+        #player-container {
+            width: 100%;
+            height: 100%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        video {
+            width: 100%;
+            height: 100%;
+            background: #000;
+        }
+
+        /* Loading overlay */
+        .loading-overlay {
+            position: absolute;
+            inset: 0;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            background: rgba(0, 0, 0, 0.85);
+            z-index: 100;
+            transition: opacity 0.3s;
+        }
+
+        .loading-overlay.hidden {
+            opacity: 0;
+            pointer-events: none;
+        }
+
+        .spinner {
+            width: 40px;
+            height: 40px;
+            border: 3px solid rgba(255, 255, 255, 0.2);
+            border-top-color: #f5c518;
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+        }
+
+        @keyframes spin {
+            to {
+                transform: rotate(360deg);
+            }
+        }
+
+        .loading-text {
+            color: #aaa;
+            margin-top: 12px;
+            font-size: 13px;
+        }
+
+        /* Error state */
+        .error-overlay {
+            position: absolute;
+            inset: 0;
+            display: none;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            background: rgba(0, 0, 0, 0.9);
+            z-index: 100;
+            color: #ff6b6b;
+        }
+
+        .error-overlay.show {
+            display: flex;
+        }
+
+        .error-icon {
+            font-size: 48px;
+            margin-bottom: 12px;
+        }
+
+        .error-text {
+            color: #aaa;
+            font-size: 14px;
+            text-align: center;
+            max-width: 80%;
+        }
+
+        /* Plyr overrides for full-size */
+        .plyr {
+            width: 100%;
+            height: 100%;
+        }
+
+        .plyr video {
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
+        }
+    </style>
+</head>
+
+<body>
+    <div id="player-container">
+        <div class="loading-overlay" id="loading">
+            <div class="spinner"></div>
+            <p class="loading-text">Memuat video...</p>
+        </div>
+        <div class="error-overlay" id="error">
+            <div class="error-icon">⚠️</div>
+            <p class="error-text" id="error-msg">Gagal memuat video</p>
+        </div>
+        <video id="video" crossorigin="anonymous" playsinline controls></video>
+    </div>
+
+    <!-- hls.js -->
+    <script src="https://cdn.jsdelivr.net/npm/hls.js@1.5.7/dist/hls.min.js"></script>
+    <!-- Plyr JS -->
+    <script src="https://cdn.plyr.io/3.7.8/plyr.polyfilled.js"></script>
+
+    <script>
+        (function () {
+            'use strict';
+
+            const video = document.getElementById('video');
+            const loadingEl = document.getElementById('loading');
+            const errorEl = document.getElementById('error');
+            const errorMsg = document.getElementById('error-msg');
+
+            let hls = null;
+            let plyr = null;
+
+            // ── Helper: send message to parent React app ──
+            function sendToParent(data) {
+                try {
+                    window.parent.postMessage({ source: 'fikdrama-player', ...data }, '*');
+                } catch (_) { }
+            }
+
+            function showLoading() {
+                loadingEl.classList.remove('hidden');
+                errorEl.classList.remove('show');
+            }
+
+            function hideLoading() {
+                loadingEl.classList.add('hidden');
+            }
+
+            function showError(msg) {
+                hideLoading();
+                errorMsg.textContent = msg || 'Gagal memuat video';
+                errorEl.classList.add('show');
+                sendToParent({ type: 'playerError', error: msg });
+            }
+
+            // ── Cleanup ──
+            function destroyPlayer() {
+                if (hls) {
+                    try { hls.destroy(); } catch (_) { }
+                    hls = null;
+                }
+                if (plyr) {
+                    try { plyr.destroy(); } catch (_) { }
+                    plyr = null;
+                }
+
+                // Reset video element
+                video.removeAttribute('src');
+                video.load();
+                video.className = '';
+            }
+
+            // ── Plyr base options ──
+            function getPlyrOptions(extraOpts = {}) {
+                return {
+                    controls: [
+                        'play-large', 'restart', 'rewind', 'play', 'fast-forward',
+                        'progress', 'current-time', 'duration', 'mute',
+                        'volume', 'captions', 'settings', 'pip', 'airplay', 'fullscreen',
+                    ],
+                    settings: ['quality', 'speed'],
+                    i18n: { qualityLabel: { 0: 'Auto' } },
+                    autoplay: false,
+                    fullscreen: {
+                        enabled: true,
+                        fallback: true,
+                        iosNative: true,
+                        container: '#player-container',
+                    },
+                    ...extraOpts,
+                };
+            }
+
+            // ── Load HLS stream ──
+            function loadHLS(url) {
+                showLoading();
+
+                if (Hls.isSupported()) {
+                    hls = new Hls({
+                        xhrSetup: (xhr) => { xhr.withCredentials = false; },
+                        maxBufferLength: 30,
+                        maxMaxBufferLength: 60,
+                    });
+
+                    hls.loadSource(url);
+                    hls.attachMedia(video);
+
+                    hls.on(Hls.Events.MANIFEST_PARSED, (_e, data) => {
+                        const availQuals = data.levels.map((l) => l.height);
+
+                        plyr = new Plyr(video, getPlyrOptions({
+                            quality: {
+                                default: 0,
+                                options: [0, ...availQuals],
+                                forced: true,
+                                onChange: (newQuality) => {
+                                    if (!hls) return;
+                                    hls.currentLevel = newQuality === 0
+                                        ? -1
+                                        : hls.levels.findIndex((l) => l.height === newQuality);
+                                },
+                            },
+                        }));
+
+                        hideLoading();
+                        sendToParent({ type: 'playerReady', qualities: availQuals });
+
+                        plyr.play().catch(() => { });
+                    });
+
+                    hls.on(Hls.Events.ERROR, (_e, data) => {
+                        if (data.fatal) {
+                            console.error('[Player] HLS Fatal:', data.type, data.details);
+                            if (data.type === Hls.ErrorTypes.NETWORK_ERROR) {
+                                hls.startLoad(); // try recovery
+                            } else if (data.type === Hls.ErrorTypes.MEDIA_ERROR) {
+                                hls.recoverMediaError();
+                            } else {
+                                showError('Stream error: ' + data.details);
+                            }
+                        }
+                    });
+
+                } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
+                    // Safari native HLS
+                    video.src = url;
+                    plyr = new Plyr(video, getPlyrOptions());
+
+                    video.addEventListener('loadedmetadata', () => {
+                        hideLoading();
+                        sendToParent({ type: 'playerReady' });
+                        plyr.play().catch(() => { });
+                    }, { once: true });
+
+                    video.addEventListener('error', () => {
+                        showError('Video gagal dimuat');
+                    }, { once: true });
+
+                } else {
+                    showError('Browser Anda tidak mendukung HLS');
+                }
+            }
+
+            // ── Load MP4 stream ──
+            function loadMP4(url) {
+                showLoading();
+
+                video.src = url;
+                plyr = new Plyr(video, getPlyrOptions());
+
+                plyr.on('ready', () => {
+                    hideLoading();
+                    sendToParent({ type: 'playerReady' });
+                    plyr.play().catch(() => { });
+                });
+
+                video.addEventListener('error', () => {
+                    showError('Gagal memuat video MP4');
+                }, { once: true });
+            }
+
+            // ── Time update reporter ──
+            let lastReportedTime = 0;
+            video.addEventListener('timeupdate', () => {
+                const now = Math.floor(video.currentTime);
+                if (now !== lastReportedTime && now % 5 === 0) {
+                    lastReportedTime = now;
+                    sendToParent({
+                        type: 'timeUpdate',
+                        currentTime: video.currentTime,
+                        duration: video.duration || 0,
+                    });
+                }
+            });
+
+            // ── Listen for commands from parent React app ──
+            window.addEventListener('message', (event) => {
+                const msg = event.data;
+                if (!msg || !msg.type) return;
+
+                switch (msg.type) {
+                    case 'loadVideo':
+                        destroyPlayer();
+                        errorEl.classList.remove('show');
+
+                        if (!msg.url) {
+                            showError('URL video tidak valid');
+                            return;
+                        }
+
+                        console.log(`[Player] Loading ${msg.streamType}: ${msg.url.substring(0, 80)}`);
+
+                        if (msg.streamType === 'hls') {
+                            loadHLS(msg.url);
+                        } else if (msg.streamType === 'mp4') {
+                            loadMP4(msg.url);
+                        } else {
+                            showError('Tipe stream tidak dikenali: ' + msg.streamType);
+                        }
+                        break;
+
+                    case 'pause':
+                        if (plyr) plyr.pause();
+                        break;
+
+                    case 'play':
+                        if (plyr) plyr.play().catch(() => { });
+                        break;
+
+                    case 'destroy':
+                        destroyPlayer();
+                        break;
+                }
+            });
+
+            // ── Tell parent we're ready to receive commands ──
+            sendToParent({ type: 'iframeReady' });
+        })();
+    </script>
+</body>
+
+</html>
