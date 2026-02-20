@@ -1,0 +1,32 @@
+.card-skeleton {
+    border-radius: var(--radius-lg);
+    overflow: hidden;
+    background: var(--bg-card);
+}
+
+.card-skeleton__thumb {
+    aspect-ratio: 2/3;
+    width: 100%;
+}
+
+.card-skeleton__body {
+    padding: 12px 14px;
+}
+
+.detail-skeleton {
+    display: flex;
+    gap: 32px;
+    padding: 40px 0;
+}
+
+.detail-skeleton__poster {
+    width: 280px;
+    min-height: 380px;
+    border-radius: var(--radius-lg);
+    flex-shrink: 0;
+}
+
+.detail-skeleton__info {
+    flex: 1;
+    padding-top: 8px;
+}

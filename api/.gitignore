@@ -1,0 +1,26 @@
+# ──────────────────────────────────────────────
+# API — .gitignore
+# ──────────────────────────────────────────────
+
+# Dependencies
+node_modules/
+
+# Environment — JANGAN PERNAH DI-COMMIT!
+.env
+
+# Logs
+*.log
+logs/
+
+# Test & debug files (generated during development)
+test_*.js
+test_*.json
+*.html
+target.html
+
+# Build
+dist/
+
+# OS
+.DS_Store
+Thumbs.db

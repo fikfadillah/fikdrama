@@ -1,0 +1,191 @@
+/* ── Home Page ───────────────────────────────────────────── */
+
+/* Full Width Hero Slideshow */
+.hero {
+    position: relative;
+    height: 70vh;
+    min-height: 500px;
+    max-height: 800px;
+    display: flex;
+    align-items: center;
+    overflow: hidden;
+    margin-top: -74px;
+    /* compensate for navbar height */
+
+    /* Child container will naturally center its content */
+    width: 100%;
+}
+
+.hero__bg-image {
+    position: absolute;
+    inset: -20px;
+    /* Oversize to prevent blur edges */
+    background-size: cover;
+    background-position: center;
+    opacity: 0;
+    transition: opacity 1.5s ease-in-out;
+    filter: blur(25px) brightness(0.4);
+    transform: scale(1.1);
+}
+
+.hero__bg-image--active {
+    opacity: 1;
+}
+
+.hero__overlay {
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(to top, rgba(0, 0, 0, 1) 0%, rgba(0, 0, 0, 0.5) 40%, rgba(0, 0, 0, 0.3) 100%),
+        linear-gradient(to right, rgba(0, 0, 0, 0.8) 0%, rgba(0, 0, 0, 0.1) 60%);
+    z-index: 1;
+}
+
+.hero__content {
+    position: relative;
+    z-index: 2;
+    padding-top: 80px;
+    width: 100%;
+}
+
+.hero__slide-layout {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 40px;
+    animation: slideUpFade 1s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.hero__slide-info {
+    flex: 1;
+    max-width: 650px;
+}
+
+.hero__slide-poster {
+    flex-shrink: 0;
+    width: 300px;
+    /* Fixed width for portrait poster */
+    height: 450px;
+    border-radius: var(--radius-lg);
+    overflow: hidden;
+    box-shadow: 0 20px 50px rgba(0, 0, 0, 0.8);
+    display: none;
+    /* Hide on mobile initially */
+}
+
+@media (min-width: 1024px) {
+    .hero__slide-poster {
+        display: block;
+    }
+}
+
+.hero__poster-img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+@keyframes slideUpFade {
+    from {
+        opacity: 0;
+        transform: translateY(30px);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+.hero__eyebrow {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 0.85rem;
+    font-weight: 700;
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+    color: var(--accent);
+    margin-bottom: 20px;
+}
+
+.pulse-dot {
+    width: 8px;
+    height: 8px;
+    background: var(--new-badge);
+    border-radius: 50%;
+    box-shadow: 0 0 10px var(--new-badge);
+}
+
+.hero__title {
+    font-size: clamp(2.5rem, 5vw, 4rem);
+    font-weight: 700;
+    line-height: 1.1;
+    margin-bottom: 16px;
+    text-shadow: 0 4px 20px rgba(0, 0, 0, 0.8);
+}
+
+.hero__title--accent {
+    color: var(--text-secondary);
+}
+
+.hero__meta {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    color: var(--text-secondary);
+    font-size: 1.05rem;
+    font-weight: 500;
+    margin-bottom: 32px;
+}
+
+.hero__meta-rating {
+    color: #fbbf24;
+    font-weight: 700;
+}
+
+.hero__sub {
+    color: var(--text-secondary);
+    font-size: 1.1rem;
+    line-height: 1.6;
+    margin-bottom: 32px;
+    max-width: 520px;
+}
+
+.hero__actions {
+    display: flex;
+    gap: 16px;
+    flex-wrap: wrap;
+}
+
+.hero__indicators {
+    position: absolute;
+    bottom: 30px;
+    right: 20px;
+    display: flex;
+    gap: 8px;
+    z-index: 3;
+}
+
+.hero__indicator {
+    width: 32px;
+    height: 4px;
+    background: rgba(255, 255, 255, 0.2);
+    border-radius: 2px;
+    transition: all 0.3s ease;
+}
+
+.hero__indicator--active {
+    background: var(--accent);
+    width: 48px;
+}
+
+
+@media (max-width: 768px) {
+    .hero__content {
+        padding: 60px 0;
+    }
+
+    .hero__poster-bg {
+        display: none;
+    }
+}

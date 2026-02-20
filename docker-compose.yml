@@ -1,0 +1,26 @@
+version: '3.8'
+
+services:
+  api:
+    build:
+      context: ./api
+      dockerfile: Dockerfile
+    container_name: oppastream-api
+    restart: unless-stopped
+    ports:
+      - "3001:3001"
+    environment:
+      - PORT=3001
+      - TARGET_BASE_URL=http://45.11.57.31
+      - CORS_ORIGINS=http://localhost:5173,http://localhost:3000
+      - CACHE_TTL_HOME=300
+      - CACHE_TTL_LIST=1800
+      - CACHE_TTL_DETAIL=1800
+      - CACHE_TTL_SEARCH=600
+      - REQUEST_DELAY_MS=800
+      - MAX_RETRIES=3
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3001/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
