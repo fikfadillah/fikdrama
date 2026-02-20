@@ -731,8 +731,10 @@ app.use((e, req, res, _next) => {
 });
 
 // ── Start ───────────────────────────────────────────────────
-app.listen(PORT, () => {
-    console.log(`
+// Hanya jalankan server jika file ini dieksekusi langsung (bukan di-import oleh module lain, e.g. Vercel)
+if (require.main === module) {
+    app.listen(PORT, () => {
+        console.log(`
 ╔════════════════════════════════════════════════════╗
 ║          FikDrama Streaming API v2.0               ║
 ╠════════════════════════════════════════════════════╣
@@ -741,8 +743,12 @@ app.listen(PORT, () => {
 ║  Spec    : http://localhost:${PORT}/docs.json        ║
 ╚════════════════════════════════════════════════════╝
 `);
-});
+    });
+}
 
 // Graceful shutdown
 process.on('SIGTERM', () => process.exit(0));
 process.on('SIGINT', () => process.exit(0));
+
+// Export untuk Vercel Serverless
+module.exports = app;
