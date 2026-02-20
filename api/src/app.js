@@ -151,11 +151,30 @@ app.get('/api/v1/player-proxy', (req, res) => {
 
     console.log(`[Proxy] Serving player for: ${parsedUrl.hostname}`);
 
-    // Alih-alih membungkus iframe dengan iframe (yang sering membuat browser
-    // nge-block request fullscreen anak), kita cukup me-redirect-nya.
-    // Karena tag <iframe> di frontend (Watch.jsx) sudah dibekali properti
-    // referrerPolicy="no-referrer", Hydrax tetap tidak akan mendeteksi dari mana usul asal requestnya.
-    res.redirect(url);
+    // Bungkus dalam HTML dengan <meta name="referrer" content="no-referrer">
+    // agar server target tidak melihat domain FikDrama sebagai Referer
+    const safeUrl = url.replace(/'/g, '%27');
+    res.setHeader('Content-Type', 'text/html; charset=utf-8');
+    res.setHeader('X-Frame-Options', 'SAMEORIGIN');
+    res.send(`<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="referrer" content="no-referrer">
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    html, body { width: 100%; height: 100%; background: #000; overflow: hidden; }
+    iframe { width: 100%; height: 100%; border: none; }
+  </style>
+</head>
+<body>
+  <iframe src='${safeUrl}'
+    allowfullscreen
+    allow="autoplay; fullscreen; encrypted-media; picture-in-picture"
+    referrerpolicy="no-referrer"
+  ></iframe>
+</body>
+</html>`);
 });
 
 // ── Stream Extractor ──────────────────────────────────────────
@@ -163,111 +182,150 @@ app.get('/api/v1/player-proxy', (req, res) => {
 const axios = require('axios');
 const TARGET = process.env.TARGET_BASE_URL || 'http://45.11.57.31';
 
+
 app.get('/api/v1/extract-stream', async (req, res) => {
     const { url } = req.query;
     if (!url) return res.status(400).json({ success: false, error: 'Missing url' });
 
+    let parsedUrl;
     try {
-        const parsedUrl = new URL(url);
+        parsedUrl = new URL(url);
         if (!['http:', 'https:'].includes(parsedUrl.protocol)) {
             return res.status(400).json({ success: false, error: 'Invalid URL' });
         }
-
-        // Fetch embed page dengan headers yang menyerupai request dari oppadrama
-        const resp = await axios.get(url, {
-            timeout: 15000,
-            headers: {
-                'Referer': TARGET + '/',
-                'Origin': TARGET,
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36',
-                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-                'Accept-Language': 'en-US,en;q=0.5',
-            },
-        });
-
-        const html = typeof resp.data === 'string' ? resp.data : JSON.stringify(resp.data);
-
-        // ── Cari URL video di dalam HTML ─────────────────────────────
-        const patterns = [
-            // HLS m3u8
-            /["'](https?:\/\/[^"']+\.m3u8[^"']*?)["']/i,
-            // MP4 direct
-            /["'](https?:\/\/[^"']+\.mp4[^"']*?)["']/i,
-            // JWPlayer file
-            /file\s*:\s*["'](https?:\/\/[^"']+)["']/i,
-            // Playerjs / Plyr sources
-            /sources\s*:\s*\[\s*\{[^}]*?file\s*:\s*["'](https?:\/\/[^"']+)["']/is,
-            // data-url
-            /data-url=["'](https?:\/\/[^"']+)["']/i,
-            // EarnVids vjsJwxData
-            /vjsJwxData\s*=\s*[^;]*?sources.*?file\s*:\s*["'](https?:\/\/[^"']+)["']/is,
-            // Generic: any hls URL-like
-            /["'](https?:\/\/[^"'\s]+\/[^"'\s]+\.m3u8(?:\?[^"'\s]*)?)["']/i,
-        ];
-
-        for (const pattern of patterns) {
-            const match = html.match(pattern);
-            if (match && match[1]) {
-                const videoUrl = match[1].trim();
-                console.log(`[Extract] Found stream: ${videoUrl.substring(0, 80)}`);
-                return res.json({
-                    success: true,
-                    videoUrl,
-                    type: videoUrl.includes('.m3u8') ? 'hls' : 'mp4',
-                    source: parsedUrl.hostname,
-                });
-            }
-        }
-
-        // Tidak ditemukan
-        console.warn(`[Extract] No stream URL found in: ${url}`);
-        res.json({ success: false, error: 'Stream URL not found in embed page', source: parsedUrl.hostname });
-    } catch (e) {
-        console.error(`[Extract] Failed: ${e.message}`);
-        res.status(500).json({ success: false, error: e.message });
+    } catch {
+        return res.status(400).json({ success: false, error: 'Invalid URL' });
     }
+
+    // Coba beberapa Referer agar lolos validasi di sisi server video
+    const referers = [
+        TARGET + '/',
+        parsedUrl.origin + '/',
+        'https://turboplay.stream/',
+        'https://turbovip.fun/',
+    ];
+
+    let html = null;
+    for (const referer of referers) {
+        try {
+            const resp = await axios.get(url, {
+                timeout: 15000,
+                maxRedirects: 5,
+                headers: {
+                    'Referer': referer,
+                    'Origin': new URL(referer).origin,
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+                    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
+                    'Accept-Language': 'en-US,en;q=0.9,id;q=0.8',
+                    'Accept-Encoding': 'gzip, deflate, br',
+                    'Sec-Fetch-Dest': 'iframe',
+                    'Sec-Fetch-Mode': 'navigate',
+                    'Sec-Fetch-Site': 'cross-site',
+                    'Cache-Control': 'no-cache',
+                    'Pragma': 'no-cache',
+                },
+            });
+            html = typeof resp.data === 'string' ? resp.data : JSON.stringify(resp.data);
+            // Kalau dapat respons yang cukup besar, hentikan loop
+            if (html && html.length > 500) break;
+        } catch (e) {
+            console.warn(`[Extract] Referer ${referer} failed: ${e.message}`);
+        }
+    }
+
+    if (!html) {
+        return res.status(502).json({ success: false, error: 'Failed to fetch embed page from all referers' });
+    }
+
+    // ── Cari URL video di dalam HTML ─────────────────────────────
+    const patterns = [
+        // HLS m3u8 (prioritas tertinggi)
+        /["'`](https?:\/\/[^"'`\s]+\.m3u8[^"'`\s]*)["'`]/i,
+        // MP4 direct
+        /["'`](https?:\/\/[^"'`\s]+\.mp4[^"'`\s]*)["'`]/i,
+        // JWPlayer / Playerjs file:
+        /(?:file|src)\s*:\s*["'](https?:\/\/[^"']+?(?:\.m3u8|\.mp4)[^"']*)["']/i,
+        // sources array [{file:...}]
+        /sources\s*[=:]\s*\[\s*\{[^}]*?(?:file|src)\s*:\s*["'](https?:\/\/[^"']+)["']/is,
+        // data-url attribute
+        /data-(?:url|src|file)=["'](https?:\/\/[^"']+)["']/i,
+        // EarnVids / vjsJwxData
+        /vjsJwxData\s*=\s*[^;]*?sources.*?file\s*:\s*["'](https?:\/\/[^"']+)["']/is,
+        // Playerjs: Playerjs('...')
+        /Playerjs\(["'](.+?)["']\)/i,
+        // setup({ ... })
+        /setup\(\s*\{[^}]*?(?:file|source|src)\s*:\s*["'](https?:\/\/[^"']+)["']/is,
+        // Generic m3u8 anywhere
+        /(https?:\/\/[^\s"'<>]+\/[^\s"'<>]+\.m3u8(?:\?[^\s"'<>]*)?)/i,
+    ];
+
+    for (const pattern of patterns) {
+        const match = html.match(pattern);
+        if (match && match[1]) {
+            const videoUrl = match[1].trim();
+            // Skip URL yang terlalu pendek (kemungkinan false positive)
+            if (videoUrl.length < 15) continue;
+            console.log(`[Extract] Found stream: ${videoUrl.substring(0, 80)}`);
+            return res.json({
+                success: true,
+                videoUrl,
+                type: videoUrl.includes('.m3u8') ? 'hls' : 'mp4',
+                source: parsedUrl.hostname,
+            });
+        }
+    }
+
+    // Tidak ditemukan
+    console.warn(`[Extract] No stream URL found in: ${url}`);
+    res.json({ success: false, error: 'Stream URL not found in embed page', source: parsedUrl.hostname });
 });
 
 // ── HLS Stream Proxy ──────────────────────────────────────────
-// Proxy m3u8 / TS chunks dengan Referer yang benar agar tidak kena CORS
+// Proxy m3u8 / TS chunks dengan STREAMING PIPE — tidak buffer ke memori
+// Ini sangat penting agar segmen video tidak memperlambat server
 app.get('/api/v1/stream-proxy', async (req, res) => {
     const { url } = req.query;
     if (!url) return res.status(400).send('Missing url');
 
+    let parsedUrlSP;
     try {
-        new URL(url); // validate
+        parsedUrlSP = new URL(url);
+        if (!['http:', 'https:'].includes(parsedUrlSP.protocol)) {
+            return res.status(400).send('Invalid URL protocol');
+        }
+    } catch {
+        return res.status(400).send('Invalid URL');
+    }
 
-        const upstream = await axios.get(url, {
-            timeout: 30000,
-            responseType: 'arraybuffer',
-            headers: {
-                'Referer': TARGET + '/',
-                'Origin': TARGET,
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36',
-                'Accept': '*/*',
-            },
-        });
+    const isM3u8Url = url.includes('.m3u8');
 
-        const upstreamCT = (upstream.headers['content-type'] || '').toLowerCase();
+    try {
+        if (isM3u8Url) {
+            // ── M3U8: perlu baca teks dan rewrite URL → buffer dulu (ukuran kecil OK)
+            const upstream = await axios.get(url, {
+                timeout: 15000,
+                responseType: 'text',
+                headers: {
+                    'Referer': TARGET + '/',
+                    'Origin': TARGET,
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+                    'Accept': '*/*',
+                },
+            });
 
-        // Deteksi m3u8: dari URL atau Content-Type upstream
-        const isM3u8 = url.includes('.m3u8') ||
-            upstreamCT.includes('mpegurl') ||
-            upstreamCT.includes('m3u8');
-
-        if (isM3u8) {
-            let m3u8Text = Buffer.from(upstream.data).toString('utf-8');
+            const upstreamCT = (upstream.headers['content-type'] || '').toLowerCase();
+            let m3u8Text = upstream.data;
             const baseUrl = url.substring(0, url.lastIndexOf('/') + 1);
 
             const toProxy = (raw) => `/api/v1/stream-proxy?url=${encodeURIComponent(raw)}`;
             const resolve = (line) => line.startsWith('http') ? line : baseUrl + line;
 
-            // Rewrite URI= di tag #EXT-X-KEY dan #EXT-X-MAP (untuk enkripsi AES)
+            // Rewrite URI= di tag #EXT-X-KEY dan #EXT-X-MAP (untuk enkripsi AES-128)
             m3u8Text = m3u8Text.replace(/(URI=")([^"]+)(")/g, (_m, open, uri, close) =>
                 open + toProxy(resolve(uri)) + close
             );
 
-            // Rewrite segment lines (baris yang tidak dimulai '#')
+            // Rewrite baris segment (tidak dimulai '#', tidak kosong)
             m3u8Text = m3u8Text.replace(/^(?!#)([^\r\n]+)$/gm, (line) => {
                 const trimmed = line.trim();
                 if (!trimmed) return line;
@@ -276,43 +334,81 @@ app.get('/api/v1/stream-proxy', async (req, res) => {
 
             res.setHeader('Content-Type', 'application/vnd.apple.mpegurl');
             res.setHeader('Access-Control-Allow-Origin', '*');
-            res.setHeader('Cache-Control', 'no-cache');
+            res.setHeader('Cache-Control', 'no-cache, no-store');
             return res.send(m3u8Text);
         }
 
-        // Segmen media — deteksi tipe dari Content-Type upstream dan magic bytes.
-        // Beberapa CDN menyamarkan segmen TS sebagai .png atau tipe lain (anti-scraping).
-        const buf = Buffer.from(upstream.data);
-        let contentType = upstreamCT;
+        // ── Segmen TS / MP4: gunakan STREAMING PIPE agar tidak buffer di memory
+        // Ini menghilangkan delay dan mengurangi pemakaian RAM secara drastis
+        const upstream = await axios({
+            method: 'get',
+            url,
+            timeout: 30000,
+            responseType: 'stream',   // ← KUNCI: stream, bukan arraybuffer
+            headers: {
+                'Referer': TARGET + '/',
+                'Origin': TARGET,
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+                'Accept': '*/*',
+                'Accept-Encoding': 'identity', // hindari gzip agar byte tetap raw
+            },
+        });
 
-        if (!contentType || contentType.includes('image') || contentType.includes('octet-stream') || contentType.includes('plain')) {
-            // TS sync byte = 0x47, dan paket TS selalu 188 bytes
-            if (buf.length > 0 && buf[0] === 0x47) {
-                contentType = 'video/mp2t';
-                console.log(`[StreamProxy] Detected TS via magic byte for: ${url.substring(0, 80)}`);
-            } else if (url.includes('.mp4') || upstreamCT.includes('mp4')) {
+        const upstreamCT = (upstream.headers['content-type'] || '').toLowerCase();
+
+        // Deteksi content-type yang benar
+        let contentType = upstreamCT;
+        if (!contentType || contentType.includes('image') || contentType.includes('octet-stream') ||
+            contentType.includes('plain') || contentType.includes('html')) {
+            if (url.includes('.mp4')) {
                 contentType = 'video/mp4';
             } else {
-                contentType = 'video/mp2t'; // safe default untuk HLS segment
+                contentType = 'video/mp2t'; // default aman untuk segmen HLS
             }
         }
 
         res.setHeader('Content-Type', contentType);
         res.setHeader('Access-Control-Allow-Origin', '*');
-        res.setHeader('Cache-Control', 'max-age=300');
-        res.send(buf);
+        // Cache segmen lebih lama — segmen HLS tidak berubah
+        res.setHeader('Cache-Control', 'public, max-age=600, s-maxage=600');
+
+        // Forward Content-Length jika ada (membantu browser progress bar)
+        if (upstream.headers['content-length']) {
+            res.setHeader('Content-Length', upstream.headers['content-length']);
+        }
+
+        // Pipe stream langsung ke response — zero copy buffer
+        upstream.data.pipe(res);
+
+        // Tangani error saat streaming berlangsung
+        upstream.data.on('error', (e) => {
+            console.error(`[StreamProxy] Pipe error: ${e.message}`);
+            if (!res.headersSent) res.status(502).send('Stream pipe error');
+        });
+
     } catch (e) {
         console.error(`[StreamProxy] Error: ${e.message}`);
-        res.status(502).send(`Upstream error: ${e.message}`);
+        if (!res.headersSent) res.status(502).send(`Upstream error: ${e.message}`);
     }
 });
 
-// Global rate limit
-const limiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 200, standardHeaders: true, legacyHeaders: false });
-app.use('/api/', limiter);
+// Global rate limit — DIKECUALIKAN /stream-proxy karena HLS butuh 30-100+ req/video
+const limiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 300, standardHeaders: true, legacyHeaders: false });
+// Terapkan hanya pada endpoint non-stream
+app.use('/api/v1/home', limiter);
+app.use('/api/v1/series', limiter);
+app.use('/api/v1/episode', limiter);
+app.use('/api/v1/search', limiter);
+app.use('/api/v1/genre', limiter);
+app.use('/api/v1/country', limiter);
+app.use('/api/v1/schedule', limiter);
+app.use('/api/v1/genres', limiter);
+app.use('/api/v1/ongoing', limiter);
+app.use('/api/v1/completed', limiter);
+// extract-stream: batas lebih ketat karena bisa mahal (fetch halaman external)
+const extractLimiter = rateLimit({ windowMs: 60 * 1000, max: 20, standardHeaders: true, legacyHeaders: false });
+app.use('/api/v1/extract-stream', extractLimiter);
 
-// Stricter untuk search
-const searchLimiter = rateLimit({ windowMs: 60 * 1000, max: 30, standardHeaders: true, legacyHeaders: false });
 
 // ── Helper ──────────────────────────────────────────────────
 function success(res, data, fromCache = false) {
@@ -580,7 +676,7 @@ app.get('/api/v1/episode/:slug', (req, res) => {
  *       429:
  *         description: Terlalu banyak request
  */
-app.get('/api/v1/search', searchLimiter, (req, res) => {
+app.get('/api/v1/search', extractLimiter, (req, res) => {
     const { q, page = 1 } = req.query;
     if (!q || !q.trim()) return err(res, 'Parameter "q" diperlukan', 400);
     const key = `search:${q}:p${page}`;
