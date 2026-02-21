@@ -33,12 +33,12 @@
   --text-on-accent: #ffffff;
 
   /* High Contrast Badges */
-  --ongoing: #46d369;
-  /* Netflix Green Match Rate */
+  --ongoing: #1eb556;
+  /* Netflix Green Match Rate - slightly darkened for contrast */
   --completed: #333333;
   /* Dark grey for completed contrast */
   --new-badge: #E50914;
-  --movie-badge: #0a84ff;
+  --movie-badge: #0066cc;
   /* Deep blue for movie badge contrast */
 
   /* Borders */

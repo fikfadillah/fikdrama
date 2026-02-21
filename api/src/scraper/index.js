@@ -110,8 +110,8 @@ function parseCard($, elem) {
     if (!title) {
         title = slug.replace(/-/g, ' ');
     }
-    const poster = $e.find('img').first().attr('data-src')
-        || $e.find('img').first().attr('src') || '';
+    const posterRaw = $e.find('img').first().attr('data-src') || $e.find('img').first().attr('src') || '';
+    const poster = posterRaw.replace('http://', 'https://');
     const rating = parseFloat($e.find('.numscore, .rating').text()) || null;
     const type = $e.find('.typez, .type').text().trim().toLowerCase() || null;
     const status = $e.find('.status').text().trim().toLowerCase() || null;
@@ -225,7 +225,8 @@ async function scrapeSeriesDetail(slug) {
 
     const title = $('h1.entry-title, h1').first().text().trim();
     const synopsis = $('.synp p, .entry-content p, .synopsis').first().text().trim();
-    const posterUrl = $('img.attachment-post-thumbnail, .thumb img, .poster img').first().attr('src') || '';
+    const posterUrlRaw = $('img.attachment-post-thumbnail, .thumb img, .poster img').first().attr('src') || '';
+    const posterUrl = posterUrlRaw.replace('http://', 'https://');
 
     // Rating
     const ratingStr = $('.num, .score, .wp-review-score-render').first().text().trim();

@@ -110,7 +110,7 @@ export default function Navbar() {
                                                     className={`dropdown-link ${pathname === `/country/${c.slug}/${m.contentType}` ? 'active' : ''}`}
                                                 >
                                                     <span className="dd-flag" aria-hidden="true">
-                                                        <img src={`https://flagcdn.com/${c.code}.svg`} width="18" alt="" style={{ borderRadius: '2px', display: 'block' }} />
+                                                        <img src={`https://flagcdn.com/${c.code}.svg`} width="18" height="14" alt="" style={{ borderRadius: '2px', display: 'block' }} />
                                                     </span>
                                                     <span className="dd-label">{c.label}</span>
                                                 </Link>
@@ -204,7 +204,7 @@ export default function Navbar() {
                                         className="mobile-dropdown-link"
                                         onClick={() => setMobileOpen(false)}
                                     >
-                                        <img src={`https://flagcdn.com/${c.code}.svg`} width="14" alt="" style={{ borderRadius: '2px' }} /> {c.label}
+                                        <img src={`https://flagcdn.com/${c.code}.svg`} width="14" height="11" alt="" style={{ borderRadius: '2px' }} /> {c.label}
                                     </Link>
                                 ))}
                             </div>

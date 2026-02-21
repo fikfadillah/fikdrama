@@ -39,6 +39,8 @@ export default function SeriesCard({ item, index = 0 }) {
                     <img
                         src={posterUrl}
                         alt={title}
+                        width="400"
+                        height="600"
                         className="series-card__img"
                         loading="lazy"
                         onError={(e) => { e.target.style.display = 'none'; }}

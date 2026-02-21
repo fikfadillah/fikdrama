@@ -106,9 +106,30 @@ app.use(helmet({
     frameguard: false,
     contentSecurityPolicy: false,
 }));
+const allowedOrigins = [
+    'https://fikflix.vercel.app',
+    'http://localhost:5173',
+    'http://localhost:3000'
+];
+
+function getAllowedOrigin(origin) {
+    const envOrigins = process.env.CORS_ORIGINS ? process.env.CORS_ORIGINS.split(',') : [];
+    if (!origin || allowedOrigins.includes(origin) || envOrigins.includes(origin) || envOrigins.includes('*')) {
+        return origin || '*';
+    }
+    return false;
+}
+
 app.use(cors({
-    origin: process.env.CORS_ORIGINS?.split(',') || '*',
+    origin: function (origin, callback) {
+        if (getAllowedOrigin(origin)) {
+            callback(null, true);
+        } else {
+            callback(new Error(`CORS Error: Origin ${origin} is not allowed`));
+        }
+    },
     methods: ['GET', 'OPTIONS'],
+    credentials: true,
 }));
 app.use(morgan('[:date[iso]] :method :url :status :response-time ms'));
 app.use(express.json());
@@ -299,11 +320,15 @@ app.get('/api/v1/extract-stream', async (req, res) => {
 // Proxy m3u8 / TS chunks dengan STREAMING PIPE — tidak buffer ke memori
 // Explicit CORS preflight agar hls.js bisa kirim Range header
 app.options('/api/v1/stream-proxy', (req, res) => {
+    const allowedOrigin = getAllowedOrigin(req.headers.origin);
+    if (!allowedOrigin) return res.status(403).end();
+
     res.set({
-        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Origin': allowedOrigin,
         'Access-Control-Allow-Methods': 'GET, OPTIONS',
         'Access-Control-Allow-Headers': 'Range, Content-Type, Accept',
         'Access-Control-Expose-Headers': 'Content-Range, Content-Length',
+        'Access-Control-Allow-Credentials': 'true',
         'Access-Control-Max-Age': '86400',
     });
     res.sendStatus(204);
@@ -324,11 +349,15 @@ app.get('/api/v1/stream-proxy', async (req, res) => {
     }
 
     // CORS headers untuk setiap respons
+    const allowedOrigin = getAllowedOrigin(req.headers.origin);
+    if (!allowedOrigin) return res.status(403).send('Origin not allowed by CORS');
+
     const corsHeaders = {
-        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Origin': allowedOrigin,
         'Access-Control-Allow-Methods': 'GET, OPTIONS',
         'Access-Control-Allow-Headers': 'Range, Content-Type',
         'Access-Control-Expose-Headers': 'Content-Range, Content-Length',
+        'Access-Control-Allow-Credentials': 'true',
     };
 
     const smartHeaders = getSmartHeaders(url);
