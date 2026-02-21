@@ -19,19 +19,7 @@
     margin-bottom: 14px;
 }
 
-.footer__brand .logo-text {
-    font-family: var(--font-heading);
-    font-size: 1.1rem;
-    font-weight: 700;
-    background: linear-gradient(135deg, #f0f0ff, var(--accent-soft));
-    -webkit-background-clip: text;
-    -webkit-text-fill-color: transparent;
-    background-clip: text;
-}
 
-.footer__brand .logo-icon {
-    color: var(--accent);
-}
 
 .footer__desc {
     color: var(--text-muted);

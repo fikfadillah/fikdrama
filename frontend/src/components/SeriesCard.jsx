@@ -1,4 +1,4 @@
-import { Link } from 'react-router-dom';
+import Link from 'next/link';
 import './SeriesCard.css';
 
 const STATUS_MAP = {
@@ -26,8 +26,14 @@ export default function SeriesCard({ item, index = 0 }) {
     // Deteksi film
     const isMovie = type?.toLowerCase() === 'movie';
 
+    // Determine the target route
+    // The slug for episodes usually contains "-episode-" (e.g., "my-holo-love-episode-1")
+    // or the title explicitly says "Episode"
+    const isEpisodeCard = slug?.includes('-episode-') || title?.toLowerCase().includes('episode');
+    const targetRoute = isEpisodeCard ? `/watch/${slug}` : `/series/${slug}`;
+
     return (
-        <Link to={`/series/${slug}`} className="series-card" aria-label={title}>
+        <Link href={targetRoute} className="series-card" aria-label={title}>
             <div className="series-card__thumb">
                 {posterUrl ? (
                     <img

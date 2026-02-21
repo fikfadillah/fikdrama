@@ -1,0 +1,423 @@
+/* ── Home Page ───────────────────────────────────────────── */
+
+/* Full Width Hero Slideshow */
+.hero {
+    position: relative;
+    height: 70vh;
+    min-height: 500px;
+    max-height: 800px;
+    display: flex;
+    align-items: center;
+    overflow: hidden;
+    margin-top: -74px;
+    /* compensate for navbar height */
+    padding-top: 74px;
+    /* push content down from navbar */
+
+    /* Child container will naturally center its content */
+    width: 100%;
+}
+
+.hero__bg-image {
+    position: absolute;
+    inset: -20px;
+    /* Oversize to prevent blur edges */
+    background-size: cover;
+    background-position: center;
+    opacity: 0;
+    transition: opacity 1.5s ease-in-out;
+    filter: blur(4px) brightness(0.35);
+    /* Reduced blur, slightly darker for text contrast */
+    transform: scale(1.1);
+}
+
+.hero__bg-image--active {
+    opacity: 1;
+}
+
+.hero__overlay {
+    position: absolute;
+    inset: 0;
+    /* Darker, wider gradient on the left behind the text, fading to transparent */
+    background: linear-gradient(to top, #141414 0%, transparent 60%),
+        linear-gradient(to right, #141414 0%, rgba(20, 20, 20, 0.8) 30%, transparent 70%);
+    z-index: 1;
+}
+
+.hero__content {
+    position: relative;
+    z-index: 2;
+    width: 100%;
+    height: 100%;
+    display: flex;
+    align-items: center;
+}
+
+.hero__slide-layout {
+    width: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 60px;
+    animation: slideUpFade 1s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.hero__slide-info {
+    flex: 1;
+    max-width: 650px;
+}
+
+.hero__slide-poster {
+    flex-shrink: 0;
+    width: 260px;
+    /* Fixed width for portrait poster */
+    height: 390px;
+    border-radius: var(--radius-lg);
+    overflow: hidden;
+    box-shadow: 0 20px 50px rgba(0, 0, 0, 0.8);
+    display: none;
+    /* Hide on mobile initially */
+}
+
+@media (min-width: 1024px) {
+    .hero__slide-poster {
+        display: block;
+    }
+}
+
+.hero__poster-img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+@keyframes slideUpFade {
+    from {
+        opacity: 0;
+        transform: translateY(30px);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+.hero__eyebrow {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 0.85rem;
+    font-weight: 700;
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+    color: #39ff14;
+    /* Neon green */
+    margin-bottom: 20px;
+    -webkit-font-smoothing: antialiased;
+    text-shadow: none;
+    /* Removed glow */
+}
+
+.pulse-dot {
+    width: 8px;
+    height: 8px;
+    background: #39ff14;
+    /* Neon green */
+    border-radius: 50%;
+    box-shadow: none;
+    /* Removed glow around the dot */
+    animation: pulseBlink 1.5s infinite ease-in-out;
+}
+
+@keyframes pulseBlink {
+
+    0%,
+    100% {
+        opacity: 1;
+        transform: scale(1);
+    }
+
+    50% {
+        opacity: 0.4;
+        transform: scale(0.85);
+    }
+}
+
+.hero__title {
+    font-size: clamp(2.5rem, 5vw, 4rem);
+    font-weight: 700;
+    line-height: 1.1;
+    margin-bottom: 16px;
+    text-shadow: 0 4px 20px rgba(0, 0, 0, 0.8);
+}
+
+.hero__title--accent {
+    color: var(--text-secondary);
+}
+
+.hero__meta {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    /* Reduced gap since dot gives visual space */
+    color: var(--text-secondary);
+    font-size: 1.05rem;
+    font-weight: 500;
+    margin-bottom: 32px;
+}
+
+.meta-dot {
+    color: var(--text-muted);
+    font-size: 1.2rem;
+    line-height: 0;
+}
+
+.hero__meta-rating {
+    color: #E50914;
+    /* Brand Red for Star Rating */
+    font-weight: 700;
+}
+
+.hero__sub {
+    color: var(--text-secondary);
+    font-size: 1.1rem;
+    line-height: 1.6;
+    margin-bottom: 32px;
+    max-width: 520px;
+}
+
+.hero__actions {
+    display: flex;
+    gap: 16px;
+    flex-wrap: wrap;
+}
+
+.hero__indicators {
+    position: absolute;
+    bottom: 50px;
+    left: 0;
+    /* Align perfectly with left edge of content */
+    display: flex;
+    gap: 8px;
+    z-index: 3;
+}
+
+.hero__indicator {
+    width: 32px;
+    height: 4px;
+    background: rgba(255, 255, 255, 0.2);
+    border-radius: 2px;
+    transition: all 0.3s ease;
+}
+
+.hero__indicator--active {
+    background: var(--accent);
+    width: 48px;
+}
+
+
+@media (max-width: 768px) {
+    .hero__content {
+        padding: 0;
+    }
+
+    .hero__poster-bg {
+        display: none;
+    }
+}
+
+/* ── Content Rows ────────────────────────────────────────── */
+.netflix-rows {
+    padding: 20px 4vw 60px;
+    position: relative;
+    z-index: 5;
+    display: flex;
+    flex-direction: column;
+    gap: 3vw;
+    background: transparent;
+}
+
+@media (max-width: 768px) {
+    .netflix-rows {
+        margin-top: 0;
+        padding: 0 16px 40px;
+        gap: 24px;
+    }
+}
+
+.content-row {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.content-row__header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-end;
+    padding: 0 4px;
+}
+
+.content-row__title {
+    font-size: clamp(1.1rem, 1.5vw, 1.4rem);
+    font-weight: 700;
+    color: var(--text-secondary);
+    margin: 0;
+    transition: color 0.3s;
+}
+
+.content-row:hover .content-row__title {
+    color: var(--text-primary);
+}
+
+.content-row__see-all {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: var(--text-muted);
+    text-decoration: none;
+    opacity: 0;
+    transform: translateX(-10px);
+    transition: all 0.3s ease;
+}
+
+.content-row:hover .content-row__see-all {
+    opacity: 1;
+    transform: translateX(0);
+}
+
+.content-row__see-all:hover {
+    color: var(--text-primary);
+}
+
+.content-row__slider-container {
+    position: relative;
+    width: 100%;
+}
+
+.content-row__slider-container:hover .slider-btn {
+    opacity: 1;
+}
+
+.slider-btn {
+    position: absolute;
+    top: 0;
+    /* Aligned exactly with the poster image content */
+    z-index: 10;
+    width: 60px;
+    /* Slightly wider for better click targets */
+    height: 240px;
+    /* Exactly matches poster height (160px width * 1.5) */
+    background: rgba(0, 0, 0, 0.4);
+    border: none;
+    color: white;
+    font-size: 2.5rem;
+    /* Larger arrows */
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    opacity: 0;
+    transition: opacity 0.3s ease, background 0.3s ease;
+    backdrop-filter: blur(4px);
+}
+
+@media (min-width: 640px) {
+    .slider-btn {
+        height: 270px;
+    }
+
+    /* 180px width * 1.5 */
+}
+
+@media (min-width: 1024px) {
+    .slider-btn {
+        height: 300px;
+    }
+
+    /* 200px width * 1.5 */
+}
+
+@media (min-width: 1400px) {
+    .slider-btn {
+        height: 330px;
+    }
+
+    /* 220px width * 1.5 */
+}
+
+.slider-btn:hover {
+    background: rgba(0, 0, 0, 0.8);
+}
+
+.slider-btn--left {
+    left: 0;
+    justify-content: flex-start;
+    padding-left: 12px;
+    background: linear-gradient(to right, rgba(20, 20, 20, 0.95) 0%, transparent 100%);
+    border-top-right-radius: 8px;
+    border-bottom-right-radius: 8px;
+}
+
+.slider-btn--right {
+    right: 0;
+    justify-content: flex-end;
+    padding-right: 12px;
+    background: linear-gradient(to left, rgba(20, 20, 20, 0.95) 0%, transparent 100%);
+    border-top-left-radius: 8px;
+    border-bottom-left-radius: 8px;
+}
+
+/* Hide navigation arrows on touch devices / smaller screens as users can swipe */
+@media (max-width: 768px),
+(hover: none) and (pointer: coarse) {
+    .slider-btn {
+        display: none !important;
+    }
+}
+
+.content-row__slider {
+    display: flex;
+    gap: 8px;
+    overflow-x: auto;
+    overflow-y: hidden;
+    padding: 20px 0;
+    /* Space for hover scale */
+    margin: -20px 0;
+    scrollbar-width: none;
+    /* Firefox */
+    -webkit-overflow-scrolling: touch;
+    scroll-behavior: smooth;
+}
+
+.content-row__slider::-webkit-scrollbar {
+    display: none;
+    /* Chrome/Safari */
+}
+
+.content-row__item {
+    flex: 0 0 auto;
+    width: 160px;
+    /* Base width */
+}
+
+@media (min-width: 640px) {
+    .content-row__item {
+        width: 180px;
+    }
+}
+
+@media (min-width: 1024px) {
+    .content-row__item {
+        width: 200px;
+    }
+}
+
+@media (min-width: 1400px) {
+    .content-row__item {
+        width: 220px;
+    }
+}

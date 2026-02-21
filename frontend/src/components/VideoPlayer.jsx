@@ -166,10 +166,7 @@ export default function VideoPlayer({
             {isResolving && (
                 <div className="video-player__loading">
                     <div className="spinner" />
-                    <p>Mencari URL Video...</p>
-                    <small style={{ color: 'rgba(255,255,255,0.4)', fontSize: '0.75rem', marginTop: '-4px' }}>
-                        Untuk beberapa server bisa memakan waktu 5-10 detik.
-                    </small>
+                    <p>Memuat Video...</p>
                 </div>
             )}
 

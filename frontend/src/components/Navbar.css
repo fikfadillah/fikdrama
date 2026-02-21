@@ -6,14 +6,13 @@
     right: 0;
     z-index: var(--z-navbar);
     height: 66px;
-    transition: background var(--transition), box-shadow var(--transition);
-    background: linear-gradient(to bottom, rgba(7, 7, 16, 0.95) 0%, rgba(7, 7, 16, 0) 100%);
+    transition: background-color 0.4s ease;
+    background: linear-gradient(to bottom, rgba(0, 0, 0, 0.7) 0%, transparent 100%);
 }
 
 .navbar--scrolled {
-    background: rgba(7, 7, 16, 0.97);
-    backdrop-filter: blur(20px);
-    box-shadow: 0 1px 0 var(--border);
+    background-color: #141414;
+    box-shadow: none;
 }
 
 .navbar__inner {
@@ -32,20 +31,19 @@
     flex-shrink: 0;
 }
 
-.logo-icon {
-    font-size: 1.2rem;
-    color: var(--accent);
-    filter: drop-shadow(0 0 8px var(--accent));
-}
-
 .logo-text {
-    font-family: var(--font-heading);
-    font-size: 1.2rem;
-    font-weight: 700;
-    background: linear-gradient(135deg, #f0f0ff 0%, var(--accent-soft) 100%);
-    -webkit-background-clip: text;
-    -webkit-text-fill-color: transparent;
-    background-clip: text;
+    font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+    font-size: 2.2rem;
+    font-weight: 900;
+    font-style: italic;
+    color: #E50914;
+    /* Exact Netflix Red */
+    letter-spacing: -1.5px;
+    text-transform: uppercase;
+    text-shadow: none;
+    border: none;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
 }
 
 /* Menu */
@@ -69,21 +67,25 @@
 .navbar__link {
     padding: 6px 14px;
     border-radius: var(--radius-full);
-    font-family: var(--font-heading);
-    font-size: 0.875rem;
-    font-weight: 500;
-    color: var(--text-secondary);
-    transition: all var(--transition);
+    font-family: var(--font-base);
+    font-size: 14px;
+    font-weight: 400;
+    color: #FFFFFF;
+    transition: color 0.3s ease;
+    text-decoration: none;
 }
 
 .navbar__link:hover,
 .navbar__link.active {
-    color: var(--text-primary);
-    background: var(--accent-dim);
+    color: #b3b3b3;
+    /* Light gray on hover */
+    background: transparent;
 }
 
 .navbar__link.active {
-    color: var(--accent-soft);
+    font-weight: 700;
+    color: #FFFFFF;
+    /* Active state stays white */
 }
 
 /* Search */

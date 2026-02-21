@@ -1,9 +1,4 @@
-/**
- * API Service — OppaDrama Frontend
- * Semua calls ke /api/v1 (di-proxy ke localhost:3001 dengan Vite)
- */
-
-const BASE = (import.meta.env.VITE_API_URL || '') + '/api/v1';
+const BASE = (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001') + '/api/v1';
 
 async function apiFetch(path) {
     const res = await fetch(`${BASE}${path}`);
@@ -19,6 +14,7 @@ export const api = {
         if (opts.status) p.set('status', opts.status);
         if (opts.type) p.set('type', opts.type);
         if (opts.genre) p.set('genre', opts.genre);
+        if (opts.country) p.set('country', opts.country);
         if (opts.order) p.set('order', opts.order);
         return apiFetch(`/series?${p}`);
     },

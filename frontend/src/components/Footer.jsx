@@ -1,4 +1,4 @@
-import { Link } from 'react-router-dom';
+import Link from 'next/link';
 import './Footer.css';
 
 const CATEGORIES = [
@@ -15,10 +15,9 @@ export default function Footer() {
         <footer className="footer">
             <div className="container footer__inner">
                 <div className="footer__brand">
-                    <div className="footer__logo">
-                        <span className="logo-icon">▶</span>
-                        <span className="logo-text">fikdrama</span>
-                    </div>
+                    <Link href="/" className="footer__logo" style={{ textDecoration: 'none' }}>
+                        <span className="logo-text">FIKFLIX</span>
+                    </Link>
                     <p className="footer__desc">
                         Nikmati drama & film Asia favorit kamu dengan subtitle Indonesia. Gratis, tanpa batas.
                     </p>
@@ -28,7 +27,7 @@ export default function Footer() {
                     <h4>Kategori</h4>
                     <ul>
                         {CATEGORIES.map((c) => (
-                            <li key={c.path}><Link to={c.path}>{c.label}</Link></li>
+                            <li key={c.path}><Link href={c.path}>{c.label}</Link></li>
                         ))}
                     </ul>
                 </div>
@@ -36,17 +35,17 @@ export default function Footer() {
                 <div className="footer__links">
                     <h4>Navigasi</h4>
                     <ul>
-                        <li><Link to="/">Beranda</Link></li>
-                        <li><Link to="/ongoing">Sedang Tayang</Link></li>
-                        <li><Link to="/completed">Sudah Tamat</Link></li>
-                        <li><Link to="/schedule">Jadwal Tayang</Link></li>
+                        <li><Link href="/">Beranda</Link></li>
+                        <li><Link href="/ongoing">Sedang Tayang</Link></li>
+                        <li><Link href="/completed">Sudah Tamat</Link></li>
+                        <li><Link href="/schedule">Jadwal Tayang</Link></li>
                     </ul>
                 </div>
             </div>
 
             <div className="footer__bottom">
                 <div className="container">
-                    <p>© {new Date().getFullYear()} Fikdrama. Data bersumber dari <span className="footer__author">fikfadillah</span> ✍️.</p>
+                    <p>© {new Date().getFullYear()} FikFlix. Data bersumber dari <span className="footer__author">fikfadillah</span> ✍️.</p>
                 </div>
             </div>
         </footer>

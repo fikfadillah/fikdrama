@@ -1,0 +1,1 @@
+﻿const axios = require('axios'); const cheerio = require('cheerio'); axios.get('http://45.11.57.31/?s=&post_type=post&genre=&country=china&status=&type=&order=update').then(res => { const $ = cheerio.load(res.data); console.log('Items:', $('.listupd .bs, .bs').length); });

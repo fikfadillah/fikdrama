@@ -7,6 +7,7 @@ import Watch from './pages/Watch';
 import Search from './pages/Search';
 import Category from './pages/Category';
 import Schedule from './pages/Schedule';
+import Bookmarks from './pages/Bookmarks';
 
 export default function App() {
     return (
@@ -26,6 +27,7 @@ export default function App() {
                     <Route path="/ongoing" element={<Category mode="ongoing" />} />
                     <Route path="/completed" element={<Category mode="completed" />} />
                     <Route path="/schedule" element={<Schedule />} />
+                    <Route path="/saved" element={<Bookmarks />} />
                 </Routes>
             </main>
             <Footer />

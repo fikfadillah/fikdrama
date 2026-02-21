@@ -3,14 +3,17 @@
     display: block;
     text-decoration: none;
     border-radius: var(--radius-lg);
-    overflow: hidden;
     background: transparent;
-    transition: transform var(--transition), box-shadow var(--transition);
+    position: relative;
+    z-index: 1;
+    /* Netflix scale delay effect */
+    transition: transform var(--transition);
     cursor: pointer;
 }
 
 .series-card:hover {
-    transform: translateY(-6px);
+    transform: translateY(-4px);
+    /* Slight lift, but no outer scale */
 }
 
 .series-card__thumb {
@@ -20,13 +23,13 @@
     background: var(--bg-card);
     border-radius: var(--radius-lg);
     border: 1px solid var(--border-soft);
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
-    transition: all var(--transition);
+    box-shadow: var(--shadow-card);
+    transition: all 0.3s ease;
 }
 
 .series-card:hover .series-card__thumb {
-    box-shadow: 0 16px 40px rgba(0, 0, 0, 0.8);
-    border-color: rgba(255, 255, 255, 0.15);
+    box-shadow: var(--shadow-float);
+    border-color: rgba(255, 255, 255, 0.2);
 }
 
 /* Thumbnail */
@@ -41,11 +44,12 @@
     width: 100%;
     height: 100%;
     object-fit: cover;
-    transition: transform var(--transition-slow);
+    transition: transform 0.4s ease;
 }
 
 .series-card:hover .series-card__img {
-    transform: scale(1.08);
+    transform: scale(1.1);
+    /* Inner image zoom */
 }
 
 .series-card__no-img {

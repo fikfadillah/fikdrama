@@ -1,5 +1,7 @@
+'use client';
 import { useState, useEffect, useRef } from 'react';
-import { Link, useNavigate, useLocation } from 'react-router-dom';
+import Link from 'next/link';
+import { useRouter, usePathname } from 'next/navigation';
 import { api } from '../services/api';
 import './Navbar.css';
 
@@ -22,7 +24,7 @@ const MENU = [
     { label: 'Animasi', path: '/category/animation' },
     { label: 'Ongoing', path: '/ongoing' },
     { label: 'Completed', path: '/completed' },
-    { label: 'Jadwal', path: '/schedule' },
+    { label: 'Advanced Search', path: '/series' },
 ];
 
 export default function Navbar() {
@@ -34,8 +36,8 @@ export default function Navbar() {
     const [sugLoading, setSugLoading] = useState(false);
     const searchRef = useRef(null);
     const debounceRef = useRef(null);
-    const navigate = useNavigate();
-    const location = useLocation();
+    const router = useRouter();
+    const pathname = usePathname();
 
     // Scroll shadow
     useEffect(() => {
@@ -45,7 +47,7 @@ export default function Navbar() {
     }, []);
 
     // Close mobile menu on route change
-    useEffect(() => { setMobileOpen(false); setSearchOpen(false); }, [location]);
+    useEffect(() => { setMobileOpen(false); setSearchOpen(false); }, [pathname]);
 
     // Live search suggestions
     useEffect(() => {
@@ -76,7 +78,7 @@ export default function Navbar() {
     function handleSearch(e) {
         e.preventDefault();
         if (!query.trim()) return;
-        navigate(`/search?q=${encodeURIComponent(query.trim())}`);
+        router.push(`/search?q=${encodeURIComponent(query.trim())}`);
         setSuggestions([]);
         setSearchOpen(false);
         setQuery('');
@@ -86,9 +88,8 @@ export default function Navbar() {
         <nav className={`navbar ${scrolled ? 'navbar--scrolled' : ''}`}>
             <div className="container navbar__inner">
                 {/* Logo */}
-                <Link to="/" className="navbar__logo">
-                    <span className="logo-icon">▶</span>
-                    <span className="logo-text">fikdrama</span>
+                <Link href="/" className="navbar__logo">
+                    <span className="logo-text">FIKFLIX</span>
                 </Link>
 
                 {/* Desktop menu */}
@@ -97,7 +98,7 @@ export default function Navbar() {
                         <li key={m.label} className={m.isDropdown ? 'navbar__item has-dropdown' : 'navbar__item'}>
                             {m.isDropdown ? (
                                 <>
-                                    <button className={`navbar__link dropdown-toggle ${COUNTRIES.some(c => location.pathname === `/country/${c.slug}/${m.contentType}`) ? 'active' : ''}`}>
+                                    <button className={`navbar__link dropdown-toggle ${COUNTRIES.some(c => pathname === `/country/${c.slug}/${m.contentType}`) ? 'active' : ''}`}>
                                         {m.label}
                                         <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="m6 9 6 6 6-6" /></svg>
                                     </button>
@@ -105,8 +106,8 @@ export default function Navbar() {
                                         {COUNTRIES.map((c) => (
                                             <li key={c.slug}>
                                                 <Link
-                                                    to={`/country/${c.slug}/${m.contentType}`}
-                                                    className={`dropdown-link ${location.pathname === `/country/${c.slug}/${m.contentType}` ? 'active' : ''}`}
+                                                    href={`/country/${c.slug}/${m.contentType}`}
+                                                    className={`dropdown-link ${pathname === `/country/${c.slug}/${m.contentType}` ? 'active' : ''}`}
                                                 >
                                                     <span className="dd-flag" aria-hidden="true">
                                                         <img src={`https://flagcdn.com/${c.code}.svg`} width="18" alt="" style={{ borderRadius: '2px', display: 'block' }} />
@@ -118,7 +119,7 @@ export default function Navbar() {
                                     </ul>
                                 </>
                             ) : (
-                                <Link to={m.path} className={`navbar__link ${location.pathname === m.path ? 'active' : ''}`}>
+                                <Link href={m.path} className={`navbar__link ${pathname === m.path ? 'active' : ''}`}>
                                     {m.label}
                                 </Link>
                             )}
@@ -126,48 +127,57 @@ export default function Navbar() {
                     ))}
                 </ul>
 
-                {/* Search */}
-                <div className={`navbar__search ${searchOpen ? 'navbar__search--open' : ''}`} ref={searchRef}>
-                    <button
-                        className="search-toggle"
-                        onClick={() => { setSearchOpen(!searchOpen); if (!searchOpen) setTimeout(() => searchRef.current?.querySelector('input')?.focus(), 150); }}
-                        aria-label="Toggle search"
-                    >
-                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-                            <circle cx="11" cy="11" r="8" /><path d="M21 21l-4.35-4.35" />
-                        </svg>
-                    </button>
+                {/* Actions Wrapper */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    {/* Search */}
+                    <div className={`navbar__search ${searchOpen ? 'navbar__search--open' : ''}`} ref={searchRef}>
+                        <button
+                            className="search-toggle"
+                            onClick={() => { setSearchOpen(!searchOpen); if (!searchOpen) setTimeout(() => searchRef.current?.querySelector('input')?.focus(), 150); }}
+                            aria-label="Toggle search"
+                        >
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                                <circle cx="11" cy="11" r="8" /><path d="M21 21l-4.35-4.35" />
+                            </svg>
+                        </button>
 
-                    {searchOpen && (
-                        <form className="search-form" onSubmit={handleSearch}>
-                            <input
-                                className="search-input"
-                                placeholder="Cari drama, film..."
-                                value={query}
-                                onChange={(e) => setQuery(e.target.value)}
-                                autoFocus
-                            />
-                            {(suggestions.length > 0 || sugLoading) && (
-                                <div className="search-dropdown">
-                                    {sugLoading && <div className="search-loading">Mencari...</div>}
-                                    {suggestions.map((item) => (
-                                        <Link
-                                            key={item.slug}
-                                            to={`/series/${item.slug}`}
-                                            className="search-item"
-                                            onClick={() => { setSuggestions([]); setSearchOpen(false); setQuery(''); }}
-                                        >
-                                            {item.posterUrl && <img src={item.posterUrl} alt={item.title} className="search-item__img" />}
-                                            <div>
-                                                <div className="search-item__title">{item.title}</div>
-                                                {item.year && <div className="search-item__year">{item.year}</div>}
-                                            </div>
-                                        </Link>
-                                    ))}
-                                </div>
-                            )}
-                        </form>
-                    )}
+                        {searchOpen && (
+                            <form className="search-form" onSubmit={handleSearch}>
+                                <input
+                                    className="search-input"
+                                    placeholder="Cari drama, film..."
+                                    value={query}
+                                    onChange={(e) => setQuery(e.target.value)}
+                                    autoFocus
+                                />
+                                {(suggestions.length > 0 || sugLoading) && (
+                                    <div className="search-dropdown">
+                                        {sugLoading && <div className="search-loading">Mencari...</div>}
+                                        {suggestions.map((item) => (
+                                            <Link
+                                                key={item.slug}
+                                                href={`/series/${item.slug}`}
+                                                className="search-item"
+                                                onClick={() => { setSuggestions([]); setSearchOpen(false); setQuery(''); }}
+                                            >
+                                                {item.posterUrl && <img src={item.posterUrl} alt={item.title} className="search-item__img" />}
+                                                <div>
+                                                    <div className="search-item__title">{item.title}</div>
+                                                    {item.year && <div className="search-item__year">{item.year}</div>}
+                                                </div>
+                                            </Link>
+                                        ))}
+                                    </div>
+                                )}
+                            </form>
+                        )}
+                    </div>
+                    {/* Saved Icon */}
+                    <Link href="/saved" aria-label="Tersimpan" className="search-toggle" style={{ textDecoration: 'none' }}>
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                            <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z" />
+                        </svg>
+                    </Link>
                 </div>
 
                 {/* Mobile hamburger */}
@@ -190,7 +200,7 @@ export default function Navbar() {
                                 {COUNTRIES.map((c) => (
                                     <Link
                                         key={c.slug}
-                                        to={`/country/${c.slug}/${m.contentType}`}
+                                        href={`/country/${c.slug}/${m.contentType}`}
                                         className="mobile-dropdown-link"
                                         onClick={() => setMobileOpen(false)}
                                     >
@@ -200,11 +210,18 @@ export default function Navbar() {
                             </div>
                         </div>
                     ) : (
-                        <Link key={m.path} to={m.path} className="mobile-menu__link" onClick={() => setMobileOpen(false)}>
+                        <Link key={m.path} href={m.path} className="mobile-menu__link" onClick={() => setMobileOpen(false)}>
                             {m.label}
                         </Link>
                     )
                 ))}
+                <div style={{ height: '1px', background: 'var(--border)', margin: '8px 0' }} />
+                <Link href="/saved" className="mobile-menu__link" onClick={() => setMobileOpen(false)}>
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ marginRight: '8px' }}>
+                        <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z" />
+                    </svg>
+                    Koleksi Tersimpan
+                </Link>
                 <form onSubmit={handleSearch} className="mobile-search">
                     <input
                         className="search-input"

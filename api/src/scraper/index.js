@@ -101,7 +101,8 @@ function parseCard($, elem) {
     // Priority: anchor title attr > inner h2/h3 > clean up .tt text manually > fallback to slug
     let title = $a.attr('title');
     if (!title) {
-        title = $e.find('.tt, .title, h2, h3').first().clone().children().remove().end().text().trim();
+        // Optimize: skip cloning, just grab direct text nodes
+        title = $e.find('.tt, .title, h2, h3').first().contents().filter((_, el) => el.type === 'text').text().trim();
     }
     if (!title) {
         title = $e.find('.tt h2, h2, h3, .title').first().text().trim();
@@ -115,10 +116,11 @@ function parseCard($, elem) {
     const type = $e.find('.typez, .type').text().trim().toLowerCase() || null;
     const status = $e.find('.status').text().trim().toLowerCase() || null;
     const year = $e.find('.year, .date').text().match(/\d{4}/)?.[0] || null;
+    const duration = $e.find('.duration, .time').text().trim() || null;
     const genres = [];
     $e.find('.genres a, .genre a').each((_, g) => genres.push($(g).text().trim()));
 
-    return { title, slug, posterUrl: poster, rating, type, status, year, genres, url: href };
+    return { title, slug, posterUrl: poster, rating, type, status, year, duration, genres, url: href };
 }
 
 // =====================================================
@@ -158,7 +160,7 @@ async function scrapeSeriesList(opts = {}) {
     let path = `/series/?page=${page}&order=${order}`;
     if (status) path += `&status[]=${encodeURIComponent(status)}`;
     if (type) path += `&type[]=${encodeURIComponent(type)}`;
-    if (country) path += `&country[]=${encodeURIComponent(country)}`;
+    if (country) path += `&country=${encodeURIComponent(country)}`;
     if (genre) path += `&genre[0]=${encodeURIComponent(genre)}`;
 
     console.log(`[Scraper] Fetching list: ${path}`);
@@ -338,10 +340,7 @@ async function scrapeEpisodePage(episodeSlug) {
             if (!iframeUrl || iframeUrl === '') return;
 
             const serverName = name || detectServer(iframeUrl);
-            if (serverName.toLowerCase().includes('filelions')) {
-                console.log(`[Scraper] Skipping FileLions server`);
-                return;
-            }
+
 
             streamLinks.push({
                 server: serverName,
@@ -362,7 +361,7 @@ async function scrapeEpisodePage(episodeSlug) {
             const src = $(el).attr('src');
             if (src && src.startsWith('http')) {
                 const sName = detectServer(src);
-                if (sName.toLowerCase().includes('filelions')) return;
+
 
                 if (!streamLinks.find(l => l.url === src)) {
                     streamLinks.push({
@@ -379,15 +378,48 @@ async function scrapeEpisodePage(episodeSlug) {
     console.log(`[Scraper] Episode /${episodeSlug}/: ${streamLinks.length} server ditemukan`);
 
     // ─── Download links ────────────────────────────────────────────────────
-    const downloadLinks = [];
+    const downloadLinksMap = new Map();
+
+    // Scrape form `.dlbox` lists
+    $('.dlbox ul, .download-box ul, .soraddlx ul').each((_, ul) => {
+        const quality = $(ul).find('li.head span.q').text().replace(/Server/i, '').trim() || $(ul).find('strong').text().trim() || 'Download';
+
+        $(ul).find('li').not('.head').each((__, li) => {
+            const serverName = $(li).find('span.q').text().trim() || $(li).text().trim() || 'Url';
+            const url = $(li).find('a').attr('href') || '';
+
+            if (url && url.startsWith('http')) {
+                if (!downloadLinksMap.has(quality)) {
+                    downloadLinksMap.set(quality, { quality: quality, links: [] });
+                }
+                downloadLinksMap.get(quality).links.push({
+                    server: serverName.replace('Download', '').trim() || detectServer(url),
+                    url: url
+                });
+            }
+        });
+    });
+
+    // Fallback: simple table links
     $('table.download-table a, .download a, .dl a, table a[href]').each((_, el) => {
-        const $el = $(el);
-        const url = $el.attr('href') || '';
-        const text = $el.text().trim();
-        if (url && url.startsWith('http')) {
-            downloadLinks.push({ server: text || detectServer(url), quality: extractQuality(text), url });
+        const url = $(el).attr('href') || '';
+        const text = $(el).text().trim();
+        if (url && url.startsWith('http') && !url.includes('facebook') && !url.includes('twitter')) {
+            const quality = extractQuality(text) || 'Link';
+            if (!downloadLinksMap.has(quality)) {
+                downloadLinksMap.set(quality, { quality: quality, links: [] });
+            }
+            // Avoid duplicates
+            if (!downloadLinksMap.get(quality).links.find(l => l.url === url)) {
+                downloadLinksMap.get(quality).links.push({
+                    server: text || detectServer(url),
+                    url: url
+                });
+            }
         }
     });
+
+    const downloadLinks = Array.from(downloadLinksMap.values());
 
     // ─── Navigate prev/next + series slug ────────────────────────────────
     const seriesHref = $('a.back-to-series, .nav-series a, .bxcl a, .naveps a').first().attr('href') || '';
