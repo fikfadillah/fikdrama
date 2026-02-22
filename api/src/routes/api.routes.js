@@ -4,6 +4,7 @@ const router = express.Router();
 const scraper = require('../scraper/index');
 const { cached, err } = require('../utils/response');
 const { cacheStats } = require('../middleware/cache');
+const { requireOpsAccess } = require('../middleware/opsAuth');
 
 // For extractLimiter we need to recreate it if used
 const rateLimit = require('express-rate-limit');
@@ -389,7 +390,7 @@ router.get('/api/v1/schedule', (req, res) =>
 );
 
 // Cache stats
-router.get('/api/v1/_cache', (req, res) => res.json(cacheStats()));
+router.get('/api/v1/_cache', requireOpsAccess, (req, res) => res.json(cacheStats()));
 
 // Health
 router.get('/health', (req, res) =>

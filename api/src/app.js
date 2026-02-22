@@ -13,8 +13,17 @@ const rateLimit = require('express-rate-limit');
 const swaggerJsdoc = require('swagger-jsdoc');
 const swaggerUi = require('swagger-ui-express');
 
-const scraper = require('./scraper/index');
-const { withCache, cacheStats, TTL } = require('./middleware/cache');
+const crypto = require('crypto');
+const { withCache, bustCache } = require('./middleware/cache');
+const { requireOpsAccess } = require('./middleware/opsAuth');
+const {
+    getProxyAllowlist,
+    validateOutboundUrl,
+    requestWithValidatedRedirects,
+    redactUrlForLogs,
+    sanitizeRequestUrlForLogs,
+} = require('./security/urlGuard');
+const { extractStream, getRefererForDomain } = require('./scraper/extractor');
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -102,9 +111,18 @@ Scraper berbasis Cheerio yang mengambil data dari sumber eksternal dengan cachin
 // ── Middleware ──────────────────────────────────────────────
 app.use(helmet({
     crossOriginResourcePolicy: { policy: 'cross-origin' },
-    // Izinkan halaman proxy kita di-embed dalam iframe
-    frameguard: false,
-    contentSecurityPolicy: false,
+    frameguard: { action: 'sameorigin' },
+    referrerPolicy: { policy: 'no-referrer' },
+    contentSecurityPolicy: {
+        useDefaults: false,
+        directives: {
+            defaultSrc: ['\'none\''],
+            baseUri: ['\'none\''],
+            formAction: ['\'none\''],
+            frameAncestors: ['\'none\''],
+            objectSrc: ['\'none\''],
+        },
+    },
 }));
 const allowedOrigins = [
     'https://fikflix.vercel.app',
@@ -112,10 +130,28 @@ const allowedOrigins = [
     'http://localhost:3000'
 ];
 
+function parseOrigins(originsRaw) {
+    if (!originsRaw) return [];
+    return originsRaw
+        .split(',')
+        .map((o) => o.trim())
+        .filter((o) => /^https?:\/\/[^/\s]+$/i.test(o));
+}
+
+const envOrigins = parseOrigins(process.env.CORS_ORIGINS || '');
+const allowAnyOrigin = (process.env.CORS_ORIGINS || '')
+    .split(',')
+    .map((o) => o.trim())
+    .includes('*');
+const allAllowedOrigins = [...new Set([...allowedOrigins, ...envOrigins])];
+const frameAncestorsList = parseOrigins(process.env.PLAYER_FRAME_ANCESTORS || '');
+const frameAncestors = ['\'self\'', ...new Set(frameAncestorsList.length ? frameAncestorsList : allAllowedOrigins)].join(' ');
+const proxyAllowlist = getProxyAllowlist();
+
 function getAllowedOrigin(origin) {
-    const envOrigins = process.env.CORS_ORIGINS ? process.env.CORS_ORIGINS.split(',') : [];
-    if (!origin || allowedOrigins.includes(origin) || envOrigins.includes(origin) || envOrigins.includes('*')) {
-        return origin || '*';
+    if (!origin) return '*';
+    if (allowAnyOrigin || allAllowedOrigins.includes(origin)) {
+        return origin;
     }
     return false;
 }
@@ -131,7 +167,8 @@ app.use(cors({
     methods: ['GET', 'OPTIONS'],
     credentials: true,
 }));
-app.use(morgan('[:date[iso]] :method :url :status :response-time ms'));
+morgan.token('safe-url', (req) => sanitizeRequestUrlForLogs(req.originalUrl || req.url || ''));
+app.use(morgan('[:date[iso]] :method :safe-url :status :response-time ms'));
 app.use(express.json());
 
 // ── Swagger UI ───────────────────────────────────────────────
@@ -149,8 +186,16 @@ const swaggerUiOptions = {
     customSiteTitle: 'FikDrama API Docs',
     swaggerOptions: { persistAuthorization: true, defaultModelsExpandDepth: 2, defaultModelExpandDepth: 2 },
 };
-app.use('/docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec, swaggerUiOptions));
-app.get('/docs.json', (req, res) => res.json(swaggerSpec));
+function applyDocsSecurityHeaders(req, res, next) {
+    res.setHeader('X-Frame-Options', 'DENY');
+    res.setHeader(
+        'Content-Security-Policy',
+        "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'"
+    );
+    next();
+}
+app.use('/docs', requireOpsAccess, applyDocsSecurityHeaders, swaggerUi.serve, swaggerUi.setup(swaggerSpec, swaggerUiOptions));
+app.get('/docs.json', requireOpsAccess, applyDocsSecurityHeaders, (req, res) => res.json(swaggerSpec));
 
 
 // ── Smart Headers Helper ─────────────────────────────────────
@@ -188,28 +233,31 @@ function getSmartHeaders(url) {
 
 // ── Player Proxy ─────────────────────────────────────────────
 // Serve HTML wrapper dengan no-referrer meta → bypass domain whitelist check streaming server
-app.get('/api/v1/player-proxy', (req, res) => {
-    const { url } = req.query;
-    if (!url) return res.status(400).send('Missing url parameter');
+function applyPlayerProxyHeaders(req, res, next) {
+    // Player proxy is intentionally embeddable by trusted frontend origins.
+    res.removeHeader('X-Frame-Options');
+    res.setHeader(
+        'Content-Security-Policy',
+        `default-src 'none'; style-src 'unsafe-inline'; frame-src https: http:; frame-ancestors ${frameAncestors}; base-uri 'none'; form-action 'none'`
+    );
+    next();
+}
 
-    // Validasi: hanya izinkan http/https URL
+app.get('/api/v1/player-proxy', applyPlayerProxyHeaders, async (req, res) => {
+    const rawUrl = typeof req.query.url === 'string' ? req.query.url : '';
+    if (!rawUrl) return res.status(400).send('Missing url parameter');
+
     let parsedUrl;
     try {
-        parsedUrl = new URL(url);
-        if (!['http:', 'https:'].includes(parsedUrl.protocol)) {
-            return res.status(400).send('Only http/https URLs allowed');
-        }
-    } catch {
-        return res.status(400).send('Invalid URL');
+        parsedUrl = await validateOutboundUrl(rawUrl, { context: 'player-proxy', allowlist: proxyAllowlist });
+    } catch (e) {
+        return res.status(400).send(e.message);
     }
 
     console.log(`[Proxy] Serving player for: ${parsedUrl.hostname}`);
 
-    // Bungkus dalam HTML dengan <meta name="referrer" content="no-referrer">
-    // agar server target tidak melihat domain FikDrama sebagai Referer
-    const safeUrl = url.replace(/'/g, '%27');
+    const safeUrl = parsedUrl.toString().replace(/'/g, '%27');
     res.setHeader('Content-Type', 'text/html; charset=utf-8');
-    res.setHeader('X-Frame-Options', 'SAMEORIGIN');
     res.send(`<!DOCTYPE html>
 <html>
 <head>
@@ -233,52 +281,51 @@ app.get('/api/v1/player-proxy', (req, res) => {
 
 // ── Stream Extractor ──────────────────────────────────────────
 // Two-tier: Axios+regex first, optional Playwright stealth fallback
-const axios = require('axios');
-const TARGET = process.env.TARGET_BASE_URL;
-const { extractStream, getRefererForDomain } = require('./scraper/extractor');
-const crypto = require('crypto');
-
 // Helper untuk validasi URL m3u8 masih hidup (HEAD request)
 async function isStreamAlive(url, referer) {
     try {
-        const resp = await axios.head(url, {
+        const { response } = await requestWithValidatedRedirects({
+            method: 'head',
+            url,
             timeout: 5000,
+            maxRedirects: 3,
             headers: {
                 'Referer': referer,
                 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
-            }
+            },
+            validateStatus: (status) => status === 200 || status === 206,
+        }, {
+            context: 'stream-revalidate',
+            allowlist: proxyAllowlist,
         });
-        return resp.status === 200 || resp.status === 206;
+        return response.status === 200 || response.status === 206;
     } catch (e) {
-        // Jika 403/404/410 berarti URL sudah mati/expired
-        console.warn(`[Cache] Stream URL dead: ${e.message}`);
+        console.warn(`[Cache] Stream URL dead: ${redactUrlForLogs(url)} (${e.message})`);
         return false;
     }
 }
 
 app.get('/api/v1/extract-stream', async (req, res) => {
-    const { url } = req.query;
-    if (!url) return res.status(400).json({ success: false, error: 'Missing url' });
+    const rawUrl = typeof req.query.url === 'string' ? req.query.url : '';
+    if (!rawUrl) return res.status(400).json({ success: false, error: 'Missing url' });
 
     let parsedUrl;
     try {
-        parsedUrl = new URL(url);
-        if (!['http:', 'https:'].includes(parsedUrl.protocol)) {
-            return res.status(400).json({ success: false, error: 'Invalid URL' });
-        }
-    } catch {
-        return res.status(400).json({ success: false, error: 'Invalid URL' });
+        parsedUrl = await validateOutboundUrl(rawUrl, { context: 'extract-stream', allowlist: proxyAllowlist });
+    } catch (e) {
+        return res.status(400).json({ success: false, error: e.message });
     }
+    const normalizedUrl = parsedUrl.toString();
 
     // Cache key: MD5 hash of the original embed URL (unique per episode & server)
-    const urlHash = crypto.createHash('md5').update(url).digest('hex');
+    const urlHash = crypto.createHash('md5').update(normalizedUrl).digest('hex');
     const cacheKey = `stream:${urlHash}`;
 
     // TTL 30 menit (1800s) — cukup aman untuk TurboVIP
     try {
         const result = await withCache(cacheKey, 'detail', async () => {
             // Function ini HANYA dipanggil jika cache kosong (MISS)
-            const extracted = await extractStream(url);
+            const extracted = await extractStream(normalizedUrl);
             if (!extracted || !extracted.success) {
                 throw new Error(extracted?.error || 'Stream not found');
             }
@@ -286,16 +333,15 @@ app.get('/api/v1/extract-stream', async (req, res) => {
         });
 
         // Validasi: Jika dari cache, pastikan URL .m3u8 masih hidup
-        if (result.fromCache && result.data.success) {
-            const isAlive = await isStreamAlive(result.data.videoUrl, getRefererForDomain(url));
+        if (result.fromCache && result.data.success && result.data.videoUrl) {
+            const isAlive = await isStreamAlive(result.data.videoUrl, getRefererForDomain(normalizedUrl));
             if (!isAlive) {
                 // Cache expired/invalidated, bust cache and retry WITHOUT cache
-                console.log(`[Cache] Purging stale stream URL for ${url}`);
-                const { bustCache } = require('./middleware/cache');
+                console.log(`[Cache] Purging stale stream URL for ${redactUrlForLogs(normalizedUrl)}`);
                 bustCache(cacheKey);
 
                 // Re-extract synchronously
-                const freshExtracted = await extractStream(url);
+                const freshExtracted = await extractStream(normalizedUrl);
                 if (freshExtracted && freshExtracted.success) {
                     res.set('X-Cache', 'REVALIDATED');
                     return res.json(freshExtracted);
@@ -309,7 +355,7 @@ app.get('/api/v1/extract-stream', async (req, res) => {
         return res.json(result.data);
 
     } catch (e) {
-        console.error(`[Extract] Error: ${e.message}`);
+        console.error(`[Extract] Error for ${redactUrlForLogs(normalizedUrl)}: ${e.message}`);
         // Jika Playwright gagal/timeout atau tidak ditemukan
         res.set('X-Cache', 'MISS');
         return res.status(502).json({ success: false, error: e.message, source: parsedUrl.hostname });
@@ -335,18 +381,16 @@ app.options('/api/v1/stream-proxy', (req, res) => {
 });
 
 app.get('/api/v1/stream-proxy', async (req, res) => {
-    const { url } = req.query;
-    if (!url) return res.status(400).send('Missing url');
+    const rawUrl = typeof req.query.url === 'string' ? req.query.url : '';
+    if (!rawUrl) return res.status(400).send('Missing url');
 
     let parsedUrlSP;
     try {
-        parsedUrlSP = new URL(url);
-        if (!['http:', 'https:'].includes(parsedUrlSP.protocol)) {
-            return res.status(400).send('Invalid URL protocol');
-        }
-    } catch {
-        return res.status(400).send('Invalid URL');
+        parsedUrlSP = await validateOutboundUrl(rawUrl, { context: 'stream-proxy', allowlist: proxyAllowlist });
+    } catch (e) {
+        return res.status(400).send(e.message);
     }
+    const normalizedUrl = parsedUrlSP.toString();
 
     // CORS headers untuk setiap respons
     const allowedOrigin = getAllowedOrigin(req.headers.origin);
@@ -360,23 +404,35 @@ app.get('/api/v1/stream-proxy', async (req, res) => {
         'Access-Control-Allow-Credentials': 'true',
     };
 
-    const smartHeaders = getSmartHeaders(url);
-    const isM3u8Url = url.includes('.m3u8');
+    const smartHeaders = getSmartHeaders(normalizedUrl);
+    const isM3u8Url = /\.m3u8($|\?)/i.test(parsedUrlSP.pathname + parsedUrlSP.search);
 
     try {
         if (isM3u8Url) {
             // ── M3U8: baca teks dan rewrite URL → buffer kecil OK
-            const upstream = await axios.get(url, {
+            const { response: upstream, finalUrl } = await requestWithValidatedRedirects({
+                method: 'get',
+                url: normalizedUrl,
                 timeout: 15000,
                 responseType: 'text',
                 headers: smartHeaders,
+                maxRedirects: 5,
+            }, {
+                context: 'stream-proxy.m3u8',
+                allowlist: proxyAllowlist,
             });
 
-            let m3u8Text = upstream.data;
-            const baseUrl = url.substring(0, url.lastIndexOf('/') + 1);
+            let m3u8Text = typeof upstream.data === 'string' ? upstream.data : String(upstream.data || '');
+            const baseUrl = new URL('.', finalUrl).toString();
 
             const toProxy = (raw) => `/api/v1/stream-proxy?url=${encodeURIComponent(raw)}`;
-            const resolve = (line) => line.startsWith('http') ? line : baseUrl + line;
+            const resolve = (line) => {
+                try {
+                    return new URL(line, baseUrl).toString();
+                } catch {
+                    return line;
+                }
+            };
 
             // Rewrite URI= di tag #EXT-X-KEY dan #EXT-X-MAP (untuk enkripsi AES-128)
             m3u8Text = m3u8Text.replace(/(URI=")([^"]+)(")/g, (_m, open, uri, close) =>
@@ -397,15 +453,22 @@ app.get('/api/v1/stream-proxy', async (req, res) => {
         }
 
         // ── Segmen TS / MP4: gunakan STREAMING PIPE agar tidak buffer di memory
-        const upstream = await axios({
+        const forwardedRange = req.headers.range;
+        const { response: upstream } = await requestWithValidatedRedirects({
             method: 'get',
-            url,
+            url: normalizedUrl,
             timeout: 30000,
             responseType: 'stream',
+            maxRedirects: 5,
             headers: {
                 ...smartHeaders,
                 'Accept-Encoding': 'identity', // hindari gzip agar byte tetap raw
+                ...(forwardedRange ? { Range: forwardedRange } : {}),
             },
+            validateStatus: (status) => status === 200 || status === 206,
+        }, {
+            context: 'stream-proxy.segment',
+            allowlist: proxyAllowlist,
         });
 
         const upstreamCT = (upstream.headers['content-type'] || '').toLowerCase();
@@ -414,7 +477,7 @@ app.get('/api/v1/stream-proxy', async (req, res) => {
         let contentType = upstreamCT;
         if (!contentType || contentType.includes('image') || contentType.includes('octet-stream') ||
             contentType.includes('plain') || contentType.includes('html')) {
-            if (url.includes('.mp4')) {
+            if (normalizedUrl.includes('.mp4')) {
                 contentType = 'video/mp4';
             } else {
                 contentType = 'video/mp2t'; // default aman untuk segmen HLS
@@ -422,6 +485,7 @@ app.get('/api/v1/stream-proxy', async (req, res) => {
         }
 
         res.set(corsHeaders);
+        res.status(upstream.status);
         res.setHeader('Content-Type', contentType);
         // Cache segmen lebih lama — segmen HLS tidak berubah
         res.setHeader('Cache-Control', 'public, max-age=600, s-maxage=600');
@@ -429,6 +493,9 @@ app.get('/api/v1/stream-proxy', async (req, res) => {
         // Forward Content-Length jika ada (membantu browser progress bar)
         if (upstream.headers['content-length']) {
             res.setHeader('Content-Length', upstream.headers['content-length']);
+        }
+        if (upstream.headers['content-range']) {
+            res.setHeader('Content-Range', upstream.headers['content-range']);
         }
 
         // Pipe stream langsung ke response — zero copy buffer
@@ -441,7 +508,7 @@ app.get('/api/v1/stream-proxy', async (req, res) => {
         });
 
     } catch (e) {
-        console.error(`[StreamProxy] Error: ${e.message}`);
+        console.error(`[StreamProxy] Error for ${redactUrlForLogs(rawUrl)}: ${e.message}`);
         if (!res.headersSent) res.status(502).send(`Upstream error: ${e.message}`);
     }
 });

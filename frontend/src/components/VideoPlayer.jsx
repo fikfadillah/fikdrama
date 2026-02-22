@@ -30,7 +30,9 @@ export default function VideoPlayer({
 }) {
     const iframeRef = useRef(null);
     const containerRef = useRef(null);
+    const channelIdRef = useRef(`fik-${Math.random().toString(36).slice(2)}-${Date.now().toString(36)}`);
     const [isFullscreen, setIsFullscreen] = useState(false);
+    const [playerOrigin, setPlayerOrigin] = useState('');
     const useNativePlayer = streamType === 'hls' || streamType === 'mp4';
 
     // ── Listen for fullscreen changes ──
@@ -77,20 +79,43 @@ export default function VideoPlayer({
         }
     }, [isFullscreen]);
 
+    useEffect(() => {
+        if (typeof window !== 'undefined') {
+            setPlayerOrigin(window.location.origin);
+        }
+    }, []);
+
+    const postToPlayer = useCallback((payload) => {
+        const targetWindow = iframeRef.current?.contentWindow;
+        if (!targetWindow || !playerOrigin) return;
+        targetWindow.postMessage({
+            channelId: channelIdRef.current,
+            ...payload,
+        }, playerOrigin);
+    }, [playerOrigin]);
+
     // ── Listen for messages from player.html ──
     const handleMessage = useCallback((event) => {
+        const playerWindow = iframeRef.current?.contentWindow;
+        if (!playerWindow) return;
+        if (event.source !== playerWindow) return;
+        if (!playerOrigin || event.origin !== playerOrigin) return;
+
         const msg = event.data;
-        if (!msg || msg.source !== 'fikdrama-player') return;
+        if (!msg || typeof msg !== 'object') return;
+        if (msg.source !== 'fikdrama-player') return;
+        if (msg.channelId !== channelIdRef.current) return;
+        if (typeof msg.type !== 'string') return;
 
         switch (msg.type) {
             case 'iframeReady':
                 // player.html has loaded — now send it the video URL
-                if (useNativePlayer && streamUrl && iframeRef.current) {
-                    iframeRef.current.contentWindow.postMessage({
+                if (useNativePlayer && streamUrl && (streamType === 'hls' || streamType === 'mp4')) {
+                    postToPlayer({
                         type: 'loadVideo',
                         url: streamUrl,
-                        streamType: streamType,
-                    }, '*');
+                        streamType,
+                    });
                 }
                 break;
 
@@ -99,14 +124,17 @@ export default function VideoPlayer({
                 break;
 
             case 'playerError':
-                console.warn('[VideoPlayer] Player error:', msg.error);
+                if (typeof msg.error === 'string' && msg.error.trim()) {
+                    console.warn('[VideoPlayer] Player error:', msg.error);
+                }
                 break;
 
             case 'timeUpdate':
                 // Could be used for watch history, progress tracking, etc.
+                if (typeof msg.currentTime !== 'number' || typeof msg.duration !== 'number') return;
                 break;
         }
-    }, [useNativePlayer, streamUrl, streamType]);
+    }, [playerOrigin, postToPlayer, useNativePlayer, streamUrl, streamType]);
 
     useEffect(() => {
         window.addEventListener('message', handleMessage);
@@ -116,31 +144,28 @@ export default function VideoPlayer({
     // ── Send loadVideo when streamUrl/streamType changes ──
     useEffect(() => {
         if (!useNativePlayer || !streamUrl || !iframeRef.current) return;
+        if (streamType !== 'hls' && streamType !== 'mp4') return;
 
         // Small delay to ensure iframe is ready
         const timer = setTimeout(() => {
-            if (iframeRef.current?.contentWindow) {
-                iframeRef.current.contentWindow.postMessage({
-                    type: 'loadVideo',
-                    url: streamUrl,
-                    streamType: streamType,
-                }, '*');
-            }
+            postToPlayer({
+                type: 'loadVideo',
+                url: streamUrl,
+                streamType,
+            });
         }, 300);
 
         return () => clearTimeout(timer);
-    }, [streamUrl, streamType, useNativePlayer]);
+    }, [postToPlayer, streamUrl, streamType, useNativePlayer]);
 
     // ── Cleanup on unmount ──
     useEffect(() => {
         return () => {
-            if (iframeRef.current?.contentWindow) {
-                try {
-                    iframeRef.current.contentWindow.postMessage({ type: 'destroy' }, '*');
-                } catch (_) { }
-            }
+            try {
+                postToPlayer({ type: 'destroy' });
+            } catch (_) { }
         };
-    }, []);
+    }, [postToPlayer]);
 
     return (
         <div className="video-player-wrapper" ref={containerRef}>
@@ -239,7 +264,7 @@ export default function VideoPlayer({
             {useNativePlayer && (
                 <iframe
                     ref={iframeRef}
-                    src="/player.html"
+                    src={`/player.html?channelId=${encodeURIComponent(channelIdRef.current)}`}
                     title="Video Player"
                     allowFullScreen
                     allow="autoplay; fullscreen; encrypted-media; picture-in-picture"
