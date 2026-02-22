@@ -21,7 +21,7 @@ const MENU = [
     { label: 'Drama', isDropdown: true, contentType: 'drama' },
     { label: 'Film', isDropdown: true, contentType: 'movie' },
     { label: 'Variety', path: '/category/tv_show' },
-    { label: 'Animasi', path: '/category/animation' },
+    { label: 'Animation', path: '/category/animation' },
     { label: 'Ongoing', path: '/ongoing' },
     { label: 'Completed', path: '/completed' },
     { label: 'Advanced Search', path: '/series' },
